@@ -50,7 +50,7 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform apply -auto-approve tfplan
 
-  detect-changes:
+    detect-changes:
     name: Detect UI API Changes
     needs: infrastructure
     runs-on: ubuntu-latest
@@ -63,23 +63,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Detect Changes
         id: changes
         shell: bash
         run: |
-          CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
+          if git rev-parse HEAD^ >/dev/null 2>&1; then
+            CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
 
-          echo "Changed files:"
-          echo "$CHANGED_FILES"
+            echo "Changed files:"
+            echo "$CHANGED_FILES"
 
-          UI_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^ui/' || true)
-          API_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^api/' || true)
+            if echo "$CHANGED_FILES" | grep -q '^ui/'; then
+              echo "ui_changed=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "ui_changed=false" >> "$GITHUB_OUTPUT"
+            fi
 
-          echo "ui_changed=$([ -n "$UI_CHANGED" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-          echo "api_changed=$([ -n "$API_CHANGED" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+            if echo "$CHANGED_FILES" | grep -q '^api/'; then
+              echo "api_changed=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "api_changed=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "First commit detected."
+            echo "UI and API will both be built and deployed."
 
+            echo "ui_changed=true" >> "$GITHUB_OUTPUT"
+            echo "api_changed=true" >> "$GITHUB_OUTPUT"
+          fi
   build-ui:
     name: Build UI
     needs: detect-changes
