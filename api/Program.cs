@@ -23,6 +23,57 @@ var summaries = new[]
     "Very Hot"
 };
 
+app.MapGet("/", () =>
+{
+    return Results.Ok(new
+    {
+        application = "UI API CI/CD Platform",
+        status = "Running",
+        message = "Welcome to the API",
+        version = "2.0",
+        deployment = "GitHub Actions",
+        infrastructure = "Terraform",
+        cloud = "Microsoft Azure",
+        timestamp = DateTime.UtcNow
+    });
+});
+
+app.MapGet("/api/status", () =>
+{
+    return Results.Ok(new
+    {
+        status = "Healthy",
+        service = "API",
+        version = "2.0",
+        deployment = "GitHub Actions",
+        infrastructure = "Terraform",
+        timestamp = DateTime.UtcNow
+    });
+});
+
+app.MapGet("/api/info", () =>
+{
+    return Results.Ok(new
+    {
+        application = "UI API CI/CD Platform",
+        framework = ".NET 8",
+        cloud = "Microsoft Azure",
+        hosting = "Azure App Service",
+        deployment = "GitHub Actions",
+        infrastructure = "Terraform"
+    });
+});
+
+app.MapGet("/api/health", () =>
+{
+    return Results.Ok(new
+    {
+        status = "Healthy",
+        service = "UI API CI/CD",
+        timestamp = DateTime.UtcNow
+    });
+});
+
 app.MapGet("/weatherforecast", () =>
 {
     var forecast = Enumerable.Range(1, 5).Select(index =>
@@ -37,20 +88,8 @@ app.MapGet("/weatherforecast", () =>
     })
     .ToArray();
 
-    return forecast;
-})
-.WithName("GetWeatherForecast");
-
-app.MapGet("/api/status", () =>
-{
-    return new
-    {
-        status = "Running",
-        message = "API deployed through GitHub Actions",
-        version = "2.0"
-    };
-})
-.WithName("GetApiStatus");
+    return Results.Ok(forecast);
+});
 
 app.Run();
 
