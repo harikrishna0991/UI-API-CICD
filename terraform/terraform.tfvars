@@ -1,0 +1,5 @@
+location              = "Central India"
+resource_group_name   = "rg-ui-api-cicd"
+app_service_plan_name = "asp-ui-api-cicd"
+ui_app_name           = "app-ui-cicd"
+api_app_name          = "app-api-cicd"

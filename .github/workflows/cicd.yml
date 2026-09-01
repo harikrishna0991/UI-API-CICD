@@ -1,0 +1,200 @@
+name: UI API CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_WORKING_DIR: terraform
+  UI_WORKING_DIR: ui
+  API_WORKING_DIR: api
+
+jobs:
+
+  infrastructure:
+    name: Terraform Infrastructure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -auto-approve tfplan
+
+  detect-changes:
+    name: Detect UI API Changes
+    needs: infrastructure
+    runs-on: ubuntu-latest
+
+    outputs:
+      ui_changed: ${{ steps.changes.outputs.ui_changed }}
+      api_changed: ${{ steps.changes.outputs.api_changed }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect Changes
+        id: changes
+        shell: bash
+        run: |
+          CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          UI_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^ui/' || true)
+          API_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^api/' || true)
+
+          echo "ui_changed=$([ -n "$UI_CHANGED" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "api_changed=$([ -n "$API_CHANGED" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  build-ui:
+    name: Build UI
+    needs: detect-changes
+    if: needs.detect-changes.outputs.ui_changed == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install Dependencies
+        working-directory: ${{ env.UI_WORKING_DIR }}
+        run: npm ci
+
+      - name: Build UI
+        working-directory: ${{ env.UI_WORKING_DIR }}
+        run: npm run build
+
+      - name: Upload UI Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-build
+          path: ui/dist
+
+  build-api:
+    name: Build API
+    needs: detect-changes
+    if: needs.detect-changes.outputs.api_changed == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        working-directory: ${{ env.API_WORKING_DIR }}
+        run: dotnet restore
+
+      - name: Build
+        working-directory: ${{ env.API_WORKING_DIR }}
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Publish
+        working-directory: ${{ env.API_WORKING_DIR }}
+        run: dotnet publish --configuration Release --output ${{ github.workspace }}/api-publish --no-build
+
+      - name: Upload API Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-build
+          path: api-publish
+
+  deploy-ui:
+    name: Deploy UI
+    needs: build-ui
+    if: needs.build-ui.result == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download UI Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-build
+          path: ui-build
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy UI to Storage
+        run: |
+          az storage blob upload-batch \
+            --account-name "${{ vars.AZURE_STORAGE_ACCOUNT }}" \
+            --destination '$web' \
+            --source ui-build \
+            --auth-mode login \
+            --overwrite
+
+  deploy-api:
+    name: Deploy API
+    needs: build-api
+    if: needs.build-api.result == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download API Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: api-build
+          path: api-build
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy API
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: app-api-cicd
+          package: api-build

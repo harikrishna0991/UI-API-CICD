@@ -1,0 +1,27 @@
+# Node
+ui/node_modules/
+ui/dist/
+
+# .NET
+api/bin/
+api/obj/
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/crash.log
+terraform/crash.*.log
+
+# Terraform variable backups
+terraform/*.tfvars.backup
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Environment files
+.env
+.env.*
