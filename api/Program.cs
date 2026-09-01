@@ -1,13 +1,10 @@
-var builder = WebApplication.CreateBuilder(args);
+﻿var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -18,23 +15,42 @@ app.UseHttpsRedirection();
 
 var summaries = new[]
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
+    "Freezing",
+    "Cold",
+    "Mild",
+    "Warm",
+    "Hot",
+    "Very Hot"
 };
 
 app.MapGet("/weatherforecast", () =>
 {
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
+    var forecast = Enumerable.Range(1, 5).Select(index =>
+    {
+        var temperatureC = Random.Shared.Next(-20, 55);
+
+        return new WeatherForecast(
             DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
+            temperatureC,
             summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
+        );
+    })
+    .ToArray();
+
     return forecast;
 })
-.WithName("GetWeatherForecast")
-.WithOpenApi();
+.WithName("GetWeatherForecast");
+
+app.MapGet("/api/status", () =>
+{
+    return new
+    {
+        status = "Running",
+        message = "API deployed through GitHub Actions",
+        version = "2.0"
+    };
+})
+.WithName("GetApiStatus");
 
 app.Run();
 
