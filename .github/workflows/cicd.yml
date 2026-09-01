@@ -15,11 +15,12 @@ env:
   API_WORKING_DIR: api
 
 jobs:
-
   infrastructure:
     name: Terraform Infrastructure
     runs-on: ubuntu-latest
-
+    env:
+      ARM_USE_OIDC: true
+      ARM_USE_AZUREAD: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,15 +51,13 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform apply -auto-approve tfplan
 
-    detect-changes:
+  detect-changes:
     name: Detect UI API Changes
     needs: infrastructure
     runs-on: ubuntu-latest
-
     outputs:
       ui_changed: ${{ steps.changes.outputs.ui_changed }}
       api_changed: ${{ steps.changes.outputs.api_changed }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,44 +68,45 @@ jobs:
         id: changes
         shell: bash
         run: |
-          if git rev-parse HEAD^ >/dev/null 2>&1; then
+          if git rev-parse HEAD^ >/dev/null 2>&1
+          then
             CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
 
             echo "Changed files:"
             echo "$CHANGED_FILES"
 
-            if echo "$CHANGED_FILES" | grep -q '^ui/'; then
+            if echo "$CHANGED_FILES" | grep -q '^ui/'
+            then
               echo "ui_changed=true" >> "$GITHUB_OUTPUT"
             else
               echo "ui_changed=false" >> "$GITHUB_OUTPUT"
             fi
 
-            if echo "$CHANGED_FILES" | grep -q '^api/'; then
+            if echo "$CHANGED_FILES" | grep -q '^api/'
+            then
               echo "api_changed=true" >> "$GITHUB_OUTPUT"
             else
               echo "api_changed=false" >> "$GITHUB_OUTPUT"
             fi
           else
-            echo "First commit detected."
-            echo "UI and API will both be built and deployed."
-
+            echo "First commit detected"
             echo "ui_changed=true" >> "$GITHUB_OUTPUT"
             echo "api_changed=true" >> "$GITHUB_OUTPUT"
           fi
+
   build-ui:
     name: Build UI
     needs: detect-changes
     if: needs.detect-changes.outputs.ui_changed == 'true'
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
@@ -129,7 +129,6 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.api_changed == 'true'
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -162,7 +161,6 @@ jobs:
     needs: build-ui
     if: needs.build-ui.result == 'success'
     runs-on: ubuntu-latest
-
     steps:
       - name: Download UI Artifact
         uses: actions/download-artifact@v4
@@ -177,7 +175,7 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy UI to Storage
+      - name: Deploy UI
         run: |
           az storage blob upload-batch \
             --account-name "${{ vars.AZURE_STORAGE_ACCOUNT }}" \
@@ -191,7 +189,6 @@ jobs:
     needs: build-api
     if: needs.build-api.result == 'success'
     runs-on: ubuntu-latest
-
     steps:
       - name: Download API Artifact
         uses: actions/download-artifact@v4
