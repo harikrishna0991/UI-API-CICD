@@ -87,13 +87,13 @@ jobs:
           role: ${{ env.VAULT_ROLE }}
           jwtGithubAudience: https://github.com/harikrishna0991/UI-API-CICD
           caCertificate: ${{ vars.VAULT_CA_CERT }}
+          exportEnv: true
           exportToken: true
 
       - name: Read Version From Vault
         id: version
         shell: bash
         env:
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
           VAULT_CA_CERT: ${{ vars.VAULT_CA_CERT }}
           INPUT_TAG: ${{ github.event.inputs.deployment_tag }}
         run: |
@@ -118,27 +118,26 @@ jobs:
             --header "X-Vault-Token: ${VAULT_TOKEN}" \
             "${VAULT_ADDR}/v1/cicd/data/ui-api-cicd")
 
-          echo "Vault response received successfully."
-
           VERSION_FROM_VAULT=$(echo "${RESPONSE}" | jq -r '.data.data.version')
 
-          if [ "${VERSION_FROM_VAULT}" = "null" ] || [ -z "${VERSION_FROM_VAULT}" ]; then
-            echo "ERROR: Version was not found in Vault."
+          if [ -z "${VERSION_FROM_VAULT}" ] || [ "${VERSION_FROM_VAULT}" = "null" ]; then
+            echo "ERROR: Version could not be read from Vault."
             exit 1
           fi
 
           echo "Vault Version: ${VERSION_FROM_VAULT}"
           echo "Manual Deployment Tag: ${INPUT_TAG}"
+          echo "Event: ${{ github.event_name }}"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${INPUT_TAG}" ]; then
             DEPLOYMENT_TAG="${INPUT_TAG}"
-            VERSION="${DEPLOYMENT_TAG#dev-}"
+            VERSION_VALUE="${DEPLOYMENT_TAG#dev-}"
           else
-            VERSION="${VERSION_FROM_VAULT}"
-            DEPLOYMENT_TAG="dev-${VERSION}"
+            VERSION_VALUE="${VERSION_FROM_VAULT}"
+            DEPLOYMENT_TAG="dev-${VERSION_VALUE}"
           fi
 
-          if [ -z "${VERSION}" ]; then
+          if [ -z "${VERSION_VALUE}" ]; then
             echo "ERROR: Version is empty."
             exit 1
           fi
@@ -149,11 +148,11 @@ jobs:
           fi
 
           echo "========================================"
-          echo "Final Version: ${VERSION}"
+          echo "Final Version: ${VERSION_VALUE}"
           echo "Final Deployment Tag: ${DEPLOYMENT_TAG}"
           echo "========================================"
 
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION_VALUE}" >> "$GITHUB_OUTPUT"
           echo "deployment_tag=${DEPLOYMENT_TAG}" >> "$GITHUB_OUTPUT"
 
 
@@ -422,7 +421,7 @@ jobs:
         run: |
           if git ls-remote --exit-code --tags origin "refs/tags/${DEPLOYMENT_TAG}" > /dev/null 2>&1; then
             echo "ERROR: Deployment tag ${DEPLOYMENT_TAG} already exists."
-            echo "The Vault version may already have been used."
+            echo "Vault version may already have been used."
             exit 1
           fi
 
@@ -471,7 +470,7 @@ jobs:
       github.event_name == 'push'
 
     steps:
-      - name: Login to Vault using GitHub OIDC
+      - name: Login to Vault and Read Current Version
         uses: hashicorp/vault-action@v3
         id: vault
         with:
@@ -480,59 +479,27 @@ jobs:
           role: ${{ env.VAULT_ROLE }}
           jwtGithubAudience: https://github.com/harikrishna0991/UI-API-CICD
           caCertificate: ${{ vars.VAULT_CA_CERT }}
+          exportEnv: true
           exportToken: true
-
-      - name: Read Current Version From Vault
-        id: current
-        shell: bash
-        env:
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          VAULT_CA_CERT: ${{ vars.VAULT_CA_CERT }}
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "Reading Current Vault Version"
-          echo "========================================"
-
-          if [ -z "${VAULT_TOKEN}" ]; then
-            echo "ERROR: Vault token is empty."
-            exit 1
-          fi
-
-          echo "${VAULT_CA_CERT}" | base64 -d > vault-ca.crt
-
-          RESPONSE=$(curl \
-            --fail \
-            --silent \
-            --show-error \
-            --cacert vault-ca.crt \
-            --header "X-Vault-Token: ${VAULT_TOKEN}" \
-            "${VAULT_ADDR}/v1/cicd/data/ui-api-cicd")
-
-          CURRENT_VERSION=$(echo "${RESPONSE}" | jq -r '.data.data.version')
-
-          if [ "${CURRENT_VERSION}" = "null" ] || [ -z "${CURRENT_VERSION}" ]; then
-            echo "ERROR: Current Vault version is empty."
-            exit 1
-          fi
-
-          echo "Current Vault Version: ${CURRENT_VERSION}"
-
-          echo "current_version=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
+          secrets: |
+            ${{ env.VAULT_SECRET_PATH }} version | CURRENT_VERSION
 
       - name: Calculate Next Version
         id: next
         shell: bash
         env:
-          CURRENT_VERSION: ${{ steps.current.outputs.current_version }}
+          CURRENT_VERSION: ${{ steps.vault.outputs.CURRENT_VERSION }}
         run: |
           set -e
 
           echo "========================================"
-          echo "Calculating Next Version"
-          echo "Current Version: ${CURRENT_VERSION}"
+          echo "Current Vault Version: ${CURRENT_VERSION}"
           echo "========================================"
+
+          if [ -z "${CURRENT_VERSION}" ]; then
+            echo "ERROR: Current Vault version is empty."
+            exit 1
+          fi
 
           IFS='.' read -r MAJOR MINOR PATCH <<< "${CURRENT_VERSION}"
 
@@ -541,32 +508,23 @@ jobs:
             exit 1
           fi
 
-          if ! [[ "${MAJOR}" =~ ^[0-9]+$ ]] || \
-             ! [[ "${MINOR}" =~ ^[0-9]+$ ]] || \
-             ! [[ "${PATCH}" =~ ^[0-9]+$ ]]; then
-            echo "ERROR: Invalid semantic version: ${CURRENT_VERSION}"
-            exit 1
-          fi
-
           NEXT_PATCH=$((PATCH + 1))
           NEXT_VERSION="${MAJOR}.${MINOR}.${NEXT_PATCH}"
 
-          echo "Next Version: ${NEXT_VERSION}"
+          echo "Next Vault Version: ${NEXT_VERSION}"
 
           echo "next_version=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Write Next Version To Vault
+        shell: bash
         env:
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
           VAULT_CA_CERT: ${{ vars.VAULT_CA_CERT }}
           NEXT_VERSION: ${{ steps.next.outputs.next_version }}
-        shell: bash
         run: |
           set -e
 
           echo "========================================"
-          echo "Updating Vault"
-          echo "New Version: ${NEXT_VERSION}"
+          echo "Updating Vault version to ${NEXT_VERSION}"
           echo "========================================"
 
           if [ -z "${VAULT_TOKEN}" ]; then
@@ -594,5 +552,5 @@ jobs:
 
           echo "========================================"
           echo "Vault version updated successfully."
-          echo "New Version: ${NEXT_VERSION}"
+          echo "New version: ${NEXT_VERSION}"
           echo "========================================"
