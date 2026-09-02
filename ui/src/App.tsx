@@ -1,191 +1,451 @@
 ﻿import { useEffect, useState } from "react";
 
+const API_BASE_URL = "https://app-api-cicd.azurewebsites.net";
+
+interface StatusResponse {
+  status?: string;
+  version?: string;
+  message?: string;
+}
+
+interface DeploymentResponse {
+  status?: string;
+  version?: string;
+  pipeline?: string;
+  infrastructure?: string;
+  platform?: string;
+  message?: string;
+  timestamp?: string;
+}
+
 function App() {
-  const [apiStatus, setApiStatus] = useState("Checking API...");
-  const [deploymentStatus, setDeploymentStatus] = useState("Checking deployment...");
-  const [time, setTime] = useState("");
+  const [apiStatus, setApiStatus] = useState<StatusResponse | null>(null);
+  const [deployment, setDeployment] =
+    useState<DeploymentResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState("");
 
   useEffect(() => {
-    setTime(new Date().toLocaleString());
+    const loadDeploymentInformation = async () => {
+      try {
+        setLoading(true);
+        setApiError("");
 
-    fetch("https://app-api-cicd.azurewebsites.net/api/status")
-      .then((response) => {
-        if (!response.ok) {
+        const [statusResponse, deploymentResponse] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/status`),
+          fetch(`${API_BASE_URL}/api/deployment`),
+        ]);
+
+        if (!statusResponse.ok || !deploymentResponse.ok) {
           throw new Error("API request failed");
         }
-        return response.json();
-      })
-      .then((data) => {
-        setApiStatus(`API Version ${data.version} - ${data.message}`);
-      })
-      .catch(() => {
-        setApiStatus("API connection failed");
-      });
 
-    fetch("https://app-api-cicd.azurewebsites.net/api/deployment")
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Deployment request failed");
-        }
-        return response.json();
-      })
-      .then((data) => {
-        setDeploymentStatus(
-          `${data.status} - ${data.pipeline} - ${data.platform}`
-        );
-      })
-      .catch(() => {
-        setDeploymentStatus("Deployment validation failed");
-      });
+        const statusData: StatusResponse = await statusResponse.json();
+        const deploymentData: DeploymentResponse =
+          await deploymentResponse.json();
+
+        setApiStatus(statusData);
+        setDeployment(deploymentData);
+      } catch (error) {
+        console.error(error);
+        setApiError("Unable to connect to the Azure API.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDeploymentInformation();
   }, []);
 
   return (
     <div
       style={{
         minHeight: "100vh",
-        background: "#f4f7fb",
-        fontFamily: "Arial, sans-serif",
-        padding: "40px",
+        background:
+          "linear-gradient(135deg, #eef4ff 0%, #f8fbff 50%, #eef8f3 100%)",
+        fontFamily:
+          "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+        color: "#172033",
+        padding: "40px 20px",
       }}
     >
       <div
         style={{
-          maxWidth: "900px",
+          maxWidth: "1100px",
           margin: "0 auto",
-          background: "#ffffff",
-          borderRadius: "12px",
-          padding: "40px",
-          boxShadow: "0 4px 20px rgba(0, 0, 0, 0.08)",
         }}
       >
-        <div style={{ marginBottom: "30px" }}>
+        <header
+          style={{
+            background: "#ffffff",
+            borderRadius: "18px",
+            padding: "30px",
+            boxShadow: "0 10px 35px rgba(31, 45, 61, 0.08)",
+            marginBottom: "24px",
+          }}
+        >
           <div
             style={{
-              display: "inline-block",
-              padding: "8px 14px",
-              borderRadius: "20px",
-              background: "#e8f5e9",
-              color: "#2e7d32",
-              fontSize: "14px",
-              fontWeight: "bold",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "20px",
+              flexWrap: "wrap",
             }}
           >
-            CI/CD Deployment Active
+            <div>
+              <div
+                style={{
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  letterSpacing: "1.5px",
+                  textTransform: "uppercase",
+                  color: "#5267a5",
+                  marginBottom: "8px",
+                }}
+              >
+                UI-API-CICD
+              </div>
+
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: "36px",
+                  lineHeight: 1.2,
+                }}
+              >
+                Frontend Deployment Test — Release 2
+              </h1>
+
+              <p
+                style={{
+                  margin: "12px 0 0",
+                  fontSize: "16px",
+                  color: "#657085",
+                  maxWidth: "720px",
+                }}
+              >
+                This release validates the complete React, .NET API, Terraform,
+                Azure and GitHub Actions deployment workflow.
+              </p>
+            </div>
+
+            <div
+              style={{
+                padding: "10px 16px",
+                borderRadius: "999px",
+                background: "#e9f8ef",
+                color: "#18794e",
+                fontWeight: 700,
+                fontSize: "14px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              ● CI/CD Release Active
+            </div>
           </div>
+        </header>
 
-          <h1
-            style={{
-              marginTop: "20px",
-              marginBottom: "10px",
-              fontSize: "36px",
-              color: "#1f2937",
-            }}
-          >
-            Frontend Deployment Test — Release Validation
-          </h1>
-
-          <p
-            style={{
-              fontSize: "17px",
-              color: "#6b7280",
-              lineHeight: "1.6",
-            }}
-          >
-            This UI update validates the complete GitHub Actions deployment
-            workflow from source code change to Azure Static Website.
-          </p>
-        </div>
-
-        <div
+        <section
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
             gap: "20px",
-            marginBottom: "30px",
+            marginBottom: "24px",
           }}
         >
           <div
             style={{
-              padding: "24px",
-              border: "1px solid #e5e7eb",
-              borderRadius: "10px",
+              background: "#ffffff",
+              borderRadius: "18px",
+              padding: "25px",
+              boxShadow: "0 10px 35px rgba(31, 45, 61, 0.07)",
             }}
           >
-            <h2 style={{ marginTop: 0, color: "#374151" }}>Frontend</h2>
+            <div
+              style={{
+                fontSize: "13px",
+                fontWeight: 700,
+                color: "#5267a5",
+                textTransform: "uppercase",
+                letterSpacing: "1px",
+              }}
+            >
+              Frontend
+            </div>
 
-            <p style={{ color: "#2e7d32", fontWeight: "bold" }}>
-              ✓ UI Deployment Updated
-            </p>
-
-            <p style={{ color: "#6b7280" }}>
+            <h2 style={{ margin: "10px 0 8px" }}>
               React + Vite
+            </h2>
+
+            <p style={{ color: "#657085", lineHeight: 1.6 }}>
+              Static frontend deployed to Azure Storage Static Website through
+              GitHub Actions.
             </p>
+
+            <div
+              style={{
+                marginTop: "18px",
+                padding: "12px 14px",
+                borderRadius: "10px",
+                background: "#f5f7fb",
+                fontSize: "14px",
+              }}
+            >
+              <strong>Release:</strong> UI-Release-2
+            </div>
           </div>
 
           <div
             style={{
-              padding: "24px",
-              border: "1px solid #e5e7eb",
-              borderRadius: "10px",
+              background: "#ffffff",
+              borderRadius: "18px",
+              padding: "25px",
+              boxShadow: "0 10px 35px rgba(31, 45, 61, 0.07)",
             }}
           >
-            <h2 style={{ marginTop: 0, color: "#374151" }}>Backend API</h2>
+            <div
+              style={{
+                fontSize: "13px",
+                fontWeight: 700,
+                color: "#5267a5",
+                textTransform: "uppercase",
+                letterSpacing: "1px",
+              }}
+            >
+              Backend
+            </div>
 
-            <p style={{ color: "#2e7d32", fontWeight: "bold" }}>
-              ✓ {apiStatus}
+            <h2 style={{ margin: "10px 0 8px" }}>
+              .NET 8 API
+            </h2>
+
+            <p style={{ color: "#657085", lineHeight: 1.6 }}>
+              REST API deployed to Azure App Service and validated directly
+              from the frontend.
             </p>
 
-            <p style={{ color: "#6b7280" }}>
-              ASP.NET Core .NET 8
-            </p>
+            <div
+              style={{
+                marginTop: "18px",
+                padding: "12px 14px",
+                borderRadius: "10px",
+                background: "#f5f7fb",
+                fontSize: "14px",
+              }}
+            >
+              <strong>API:</strong>{" "}
+              {loading ? "Checking..." : apiError ? "Offline" : "Connected"}
+            </div>
           </div>
-        </div>
+        </section>
 
-        <div
+        <section
           style={{
-            padding: "24px",
-            borderRadius: "10px",
-            background: "#f8fafc",
-            border: "1px solid #e2e8f0",
-            marginBottom: "20px",
+            background: "#ffffff",
+            borderRadius: "18px",
+            padding: "28px",
+            boxShadow: "0 10px 35px rgba(31, 45, 61, 0.07)",
+            marginBottom: "24px",
           }}
         >
-          <h2 style={{ marginTop: 0, color: "#374151" }}>
+          <h2 style={{ marginTop: 0 }}>
             Deployment Validation
           </h2>
 
-          <p style={{ color: "#475569", lineHeight: "1.6" }}>
-            {deploymentStatus}
+          <p
+            style={{
+              color: "#657085",
+              lineHeight: 1.7,
+              marginBottom: "22px",
+            }}
+          >
+            The information below is retrieved from the deployed Azure API.
+            This confirms that the updated frontend is communicating with the
+            updated backend.
           </p>
 
-          <p style={{ color: "#64748b", fontSize: "14px" }}>
-            Last UI validation: {time}
-          </p>
-        </div>
+          {loading && (
+            <div
+              style={{
+                padding: "18px",
+                borderRadius: "12px",
+                background: "#f5f7fb",
+              }}
+            >
+              Loading deployment information...
+            </div>
+          )}
 
-        <div
+          {apiError && (
+            <div
+              style={{
+                padding: "18px",
+                borderRadius: "12px",
+                background: "#fff1f1",
+                color: "#a33a3a",
+              }}
+            >
+              {apiError}
+            </div>
+          )}
+
+          {!loading && !apiError && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: "14px",
+              }}
+            >
+              <InfoCard
+                title="API Status"
+                value={apiStatus?.status ?? "Unknown"}
+              />
+
+              <InfoCard
+                title="API Version"
+                value={apiStatus?.version ?? "Unknown"}
+              />
+
+              <InfoCard
+                title="Deployment Status"
+                value={deployment?.status ?? "Unknown"}
+              />
+
+              <InfoCard
+                title="Deployment Version"
+                value={deployment?.version ?? "Unknown"}
+              />
+
+              <InfoCard
+                title="Pipeline"
+                value={deployment?.pipeline ?? "Unknown"}
+              />
+
+              <InfoCard
+                title="Infrastructure"
+                value={deployment?.infrastructure ?? "Unknown"}
+              />
+
+              <InfoCard
+                title="Platform"
+                value={deployment?.platform ?? "Unknown"}
+              />
+
+              <InfoCard
+                title="Deployment Time"
+                value={
+                  deployment?.timestamp
+                    ? new Date(
+                        deployment.timestamp
+                      ).toLocaleString()
+                    : "Unknown"
+                }
+              />
+            </div>
+          )}
+        </section>
+
+        <section
           style={{
-            padding: "20px",
-            borderRadius: "10px",
-            background: "#eef2ff",
-            border: "1px solid #c7d2fe",
+            background: "#172033",
+            color: "#ffffff",
+            borderRadius: "18px",
+            padding: "28px",
+            boxShadow: "0 10px 35px rgba(31, 45, 61, 0.12)",
           }}
         >
-          <strong style={{ color: "#3730a3" }}>
-            Latest UI deployment through GitHub Actions
-          </strong>
+          <h2 style={{ marginTop: 0 }}>
+            Release 2 Deployment
+          </h2>
 
           <p
             style={{
-              marginBottom: 0,
-              color: "#4f46e5",
-              lineHeight: "1.6",
+              color: "#d6dcea",
+              lineHeight: 1.7,
+              marginBottom: "20px",
             }}
           >
-            Infrastructure: Terraform | Platform: Microsoft Azure |
-            Deployment: GitHub Actions
+            Latest UI deployment through GitHub Actions with Terraform-managed
+            Azure infrastructure and a .NET 8 backend.
           </p>
-        </div>
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "10px",
+            }}
+          >
+            {[
+              "GitHub Actions",
+              "Terraform",
+              "React",
+              "Vite",
+              ".NET 8",
+              "Azure Storage",
+              "Azure App Service",
+              "HashiCorp Vault",
+            ].map((technology) => (
+              <span
+                key={technology}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: "999px",
+                  background: "rgba(255,255,255,0.1)",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                }}
+              >
+                {technology}
+              </span>
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function InfoCard({
+  title,
+  value,
+}: {
+  title: string;
+  value: string;
+}) {
+  return (
+    <div
+      style={{
+        padding: "18px",
+        borderRadius: "12px",
+        background: "#f6f8fc",
+        border: "1px solid #e5e9f2",
+      }}
+    >
+      <div
+        style={{
+          fontSize: "12px",
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: "0.8px",
+          color: "#7a8498",
+          marginBottom: "7px",
+        }}
+      >
+        {title}
+      </div>
+
+      <div
+        style={{
+          fontSize: "17px",
+          fontWeight: 700,
+          wordBreak: "break-word",
+        }}
+      >
+        {value}
       </div>
     </div>
   );
