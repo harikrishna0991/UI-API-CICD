@@ -94,12 +94,17 @@ jobs:
         id: version
         shell: bash
         run: |
-          if [ -n "${{ github.event.inputs.deployment_tag }}" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.deployment_tag }}" ]; then
             DEPLOYMENT_TAG="${{ github.event.inputs.deployment_tag }}"
             VERSION="${DEPLOYMENT_TAG#dev-}"
           else
-            VERSION="${{ steps.vault.outputs.VERSION }}"
+            VERSION="${VERSION}"
             DEPLOYMENT_TAG="dev-${VERSION}"
+          fi
+
+          if [ -z "${VERSION}" ]; then
+            echo "ERROR: Vault version is empty."
+            exit 1
           fi
 
           echo "Version: ${VERSION}"
@@ -338,6 +343,11 @@ jobs:
         run: |
           TAG="${{ needs.vault-version.outputs.deployment_tag }}"
 
+          if [ -z "${TAG}" ]; then
+            echo "ERROR: Deployment tag is empty."
+            exit 1
+          fi
+
           echo "Creating deployment tag: ${TAG}"
 
           git config user.name "github-actions[bot]"
@@ -377,9 +387,14 @@ jobs:
         id: next
         shell: bash
         run: |
-          CURRENT_VERSION="${{ steps.vault.outputs.CURRENT_VERSION }}"
+          CURRENT_VERSION="${CURRENT_VERSION}"
 
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+          if [ -z "${CURRENT_VERSION}" ]; then
+            echo "ERROR: Current Vault version is empty."
+            exit 1
+          fi
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${CURRENT_VERSION}"
 
           NEXT_PATCH=$((PATCH + 1))
 
@@ -395,11 +410,21 @@ jobs:
           VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         shell: bash
         run: |
+          CA_FILE=$(mktemp)
+
+          echo "${{ vars.VAULT_CA_CERT }}" | base64 -d > "${CA_FILE}"
+
+          echo "Updating Vault version to ${{ steps.next.outputs.next_version }}"
+
           curl \
             --fail \
             --request POST \
             --header "X-Vault-Token: ${VAULT_TOKEN}" \
             --header "Content-Type: application/json" \
             --data "{\"data\":{\"version\":\"${{ steps.next.outputs.next_version }}\"}}" \
-            --cacert <(echo "${{ vars.VAULT_CA_CERT }}" | base64 -d) \
+            --cacert "${CA_FILE}" \
             "${{ env.VAULT_ADDR }}/v1/cicd/data/ui-api-cicd"
+
+          rm -f "${CA_FILE}"
+
+          echo "Vault version updated successfully."
