@@ -194,7 +194,7 @@ function App() {
               CI/CD VALIDATION
             </div>
 
-            <h2>Frontend Deployment Test — Updated</h2>
+            <h2>Frontend Deployment Test — Release Tag Updated Versio</h2>
 
             <p>
               This UI has been updated to validate the automated
