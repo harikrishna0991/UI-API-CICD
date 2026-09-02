@@ -333,8 +333,8 @@ app.MapGet("/api/info", () =>
         cloud = "Microsoft Azure",
         hosting = "Azure App Service",
         deployment = "GitHub Actions",
-        infrastructure = "Terraform" ,
-        Vrsn Storage = "Hashi Corp Vault"
+        infrastructure = "Terraform" 
+        
     });
 });
 
