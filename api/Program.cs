@@ -24,7 +24,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-
+// Root endpoint
 app.MapGet("/", () =>
 {
     return Results.Ok(new
@@ -37,7 +37,7 @@ app.MapGet("/", () =>
     });
 });
 
-
+// Status endpoint
 app.MapGet("/api/status", () =>
 {
     return Results.Ok(new
@@ -52,13 +52,13 @@ app.MapGet("/api/status", () =>
     });
 });
 
-
+// Deployment endpoint
 app.MapGet("/api/deployment", () =>
 {
     return Results.Ok(new
     {
         status = "Deployed",
-        version = "4.0.0",
+        version = "4.0",
         release = "API-Release-4",
         pipeline = "GitHub Actions",
         infrastructure = "Terraform",
@@ -68,7 +68,7 @@ app.MapGet("/api/deployment", () =>
     });
 });
 
-
+// Health endpoint
 app.MapGet("/api/health", () =>
 {
     return Results.Ok(new
@@ -80,5 +80,44 @@ app.MapGet("/api/health", () =>
     });
 });
 
+// WeatherForecast endpoint
+app.MapGet("/weatherforecast", () =>
+{
+    var summaries = new[]
+    {
+        "Freezing",
+        "Bracing",
+        "Chilly",
+        "Cool",
+        "Mild",
+        "Warm",
+        "Balmy",
+        "Hot",
+        "Sweltering"
+    };
+
+    var forecast = Enumerable.Range(1, 5)
+        .Select(index => new WeatherForecast
+        {
+            Date = DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
+            TemperatureC = Random.Shared.Next(-20, 55),
+            Summary = summaries[Random.Shared.Next(summaries.Length)]
+        })
+        .ToArray();
+
+    return Results.Ok(forecast);
+});
 
 app.Run();
+
+public class WeatherForecast
+{
+    public DateOnly Date { get; set; }
+
+    public int TemperatureC { get; set; }
+
+    public string? Summary { get; set; }
+
+    public int TemperatureF =>
+        32 + (int)(TemperatureC / 0.5556);
+}

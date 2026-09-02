@@ -2,518 +2,544 @@
 
 const API_BASE_URL = "https://app-api-cicd.azurewebsites.net";
 
-interface StatusResponse {
+type ApiResponse = {
   status?: string;
-  version?: string;
-  message?: string;
-  pipeline?: string;
-  infrastructure?: string;
-  platform?: string;
-}
-
-interface DeploymentResponse {
-  status?: string;
+  service?: string;
   version?: string;
   release?: string;
+  message?: string;
   pipeline?: string;
   infrastructure?: string;
   platform?: string;
-  message?: string;
   timestamp?: string;
-}
+  [key: string]: unknown;
+};
+
+type WeatherForecast = {
+  date: string;
+  temperatureC: number;
+  temperatureF: number;
+  summary: string;
+};
 
 function App() {
-  const [apiStatus, setApiStatus] = useState<StatusResponse | null>(null);
-  const [deployment, setDeployment] =
-    useState<DeploymentResponse | null>(null);
+  const [rootData, setRootData] = useState<ApiResponse | null>(null);
+  const [statusData, setStatusData] = useState<ApiResponse | null>(null);
+  const [deploymentData, setDeploymentData] =
+    useState<ApiResponse | null>(null);
+  const [healthData, setHealthData] = useState<ApiResponse | null>(null);
+  const [weatherData, setWeatherData] = useState<WeatherForecast[]>([]);
 
   const [loading, setLoading] = useState(true);
-  const [apiError, setApiError] = useState("");
+  const [error, setError] = useState("");
+
+  const fetchApiData = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const [
+        rootResponse,
+        statusResponse,
+        deploymentResponse,
+        healthResponse,
+        weatherResponse,
+      ] = await Promise.all([
+        fetch(`${API_BASE_URL}/`),
+        fetch(`${API_BASE_URL}/api/status`),
+        fetch(`${API_BASE_URL}/api/deployment`),
+        fetch(`${API_BASE_URL}/api/health`),
+        fetch(`${API_BASE_URL}/weatherforecast`),
+      ]);
+
+      if (
+        !rootResponse.ok ||
+        !statusResponse.ok ||
+        !deploymentResponse.ok ||
+        !healthResponse.ok ||
+        !weatherResponse.ok
+      ) {
+        throw new Error("One or more API endpoints returned an error.");
+      }
+
+      const root = await rootResponse.json();
+      const status = await statusResponse.json();
+      const deployment = await deploymentResponse.json();
+      const health = await healthResponse.json();
+      const weather = await weatherResponse.json();
+
+      setRootData(root);
+      setStatusData(status);
+      setDeploymentData(deployment);
+      setHealthData(health);
+      setWeatherData(weather);
+    } catch (err) {
+      console.error(err);
+      setError(
+        "Unable to connect to the API. Please check the API deployment and network connection."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadDeploymentData = async () => {
-      try {
-        setLoading(true);
-        setApiError("");
-
-        const [statusResponse, deploymentResponse] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/status`),
-          fetch(`${API_BASE_URL}/api/deployment`),
-        ]);
-
-        if (!statusResponse.ok || !deploymentResponse.ok) {
-          throw new Error("API request failed");
-        }
-
-        const statusData: StatusResponse = await statusResponse.json();
-        const deploymentData: DeploymentResponse =
-          await deploymentResponse.json();
-
-        setApiStatus(statusData);
-        setDeployment(deploymentData);
-      } catch (error) {
-        console.error("API connection error:", error);
-        setApiError("Unable to connect to the Azure API.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadDeploymentData();
+    fetchApiData();
   }, []);
 
   return (
-    <div className="app">
-      <style>{`
-        * {
-          box-sizing: border-box;
-        }
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f5f7fb",
+        fontFamily: "Arial, sans-serif",
+        color: "#1f2937",
+      }}
+    >
+      {/* Header */}
+      <header
+        style={{
+          background: "#111827",
+          color: "#ffffff",
+          padding: "24px 40px",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: "1200px",
+            margin: "0 auto",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <h1 style={{ margin: 0 }}>Release Validation Dashboard</h1>
+            <p style={{ margin: "8px 0 0", color: "#d1d5db" }}>
+              UI-API-CICD | Azure + Terraform + GitHub Actions
+            </p>
+          </div>
 
-        body {
-          margin: 0;
-          font-family: Inter, Arial, sans-serif;
-          background: #f4f7fb;
-          color: #172033;
-        }
+          <div
+            style={{
+              padding: "8px 14px",
+              borderRadius: "20px",
+              background: "#065f46",
+              fontSize: "14px",
+              fontWeight: "bold",
+            }}
+          >
+            ● RELEASE 4 ACTIVE
+          </div>
+        </div>
+      </header>
 
-        .app {
-          min-height: 100vh;
-          padding: 40px 20px;
-        }
+      {/* Main */}
+      <main
+        style={{
+          maxWidth: "1200px",
+          margin: "0 auto",
+          padding: "40px",
+        }}
+      >
+        {/* Deployment Summary */}
+        <section>
+          <h2>Deployment Summary</h2>
 
-        .container {
-          max-width: 1120px;
-          margin: 0 auto;
-        }
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: "20px",
+              marginTop: "20px",
+            }}
+          >
+            <InfoCard
+              title="UI Release"
+              value="Release 4"
+              subtitle="React / Vite"
+            />
 
-        .header {
-          background: #ffffff;
-          border-radius: 18px;
-          padding: 32px;
-          margin-bottom: 22px;
-          box-shadow: 0 8px 30px rgba(20, 35, 60, 0.08);
-          border: 1px solid #e7ebf2;
-        }
+            <InfoCard
+              title="API Release"
+              value={statusData?.release || "Loading..."}
+              subtitle={statusData?.version || ""}
+            />
 
-        .header-top {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 20px;
-          flex-wrap: wrap;
-        }
+            <InfoCard
+              title="Infrastructure"
+              value="Azure"
+              subtitle="Managed by Terraform"
+            />
 
-        .eyebrow {
-          color: #5267a5;
-          font-size: 13px;
-          font-weight: 800;
-          letter-spacing: 1.5px;
-          text-transform: uppercase;
-          margin-bottom: 10px;
-        }
+            <InfoCard
+              title="Pipeline"
+              value="GitHub Actions"
+              subtitle="CI/CD Automated"
+            />
+          </div>
+        </section>
 
-        h1 {
-          margin: 0;
-          font-size: 38px;
-          line-height: 1.2;
-        }
+        {/* API Endpoints */}
+        <section style={{ marginTop: "45px" }}>
+          <h2>API Endpoints</h2>
 
-        .subtitle {
-          color: #68758b;
-          font-size: 16px;
-          line-height: 1.7;
-          max-width: 760px;
-          margin: 14px 0 0;
-        }
+          <p style={{ color: "#6b7280" }}>
+            Live responses from the deployed .NET 8 API.
+          </p>
 
-        .release-badge {
-          padding: 10px 15px;
-          border-radius: 999px;
-          background: #eaf8f0;
-          color: #197448;
-          font-size: 13px;
-          font-weight: 800;
-          white-space: nowrap;
-        }
+          {error && (
+            <div
+              style={{
+                marginTop: "20px",
+                padding: "16px",
+                background: "#fee2e2",
+                border: "1px solid #fecaca",
+                borderRadius: "8px",
+                color: "#991b1b",
+              }}
+            >
+              {error}
+            </div>
+          )}
 
-        .cards {
-          display: grid;
-          grid-template-columns: repeat(
-            auto-fit,
-            minmax(280px, 1fr)
-          );
-          gap: 20px;
-          margin-bottom: 22px;
-        }
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(300px, 1fr))",
+              gap: "20px",
+              marginTop: "20px",
+            }}
+          >
+            <EndpointCard
+              method="GET"
+              endpoint="/"
+              description="API root and release information"
+              loading={loading}
+              status={rootData?.status}
+              release={rootData?.release}
+              message={rootData?.message}
+            />
 
-        .card {
-          background: #ffffff;
-          border-radius: 18px;
-          padding: 26px;
-          border: 1px solid #e7ebf2;
-          box-shadow: 0 8px 30px rgba(20, 35, 60, 0.06);
-        }
+            <EndpointCard
+              method="GET"
+              endpoint="/api/status"
+              description="API deployment status"
+              loading={loading}
+              status={statusData?.status}
+              release={statusData?.release}
+              message={statusData?.message}
+            />
 
-        .card-label {
-          font-size: 12px;
-          font-weight: 800;
-          letter-spacing: 1px;
-          text-transform: uppercase;
-          color: #7a8498;
-        }
+            <EndpointCard
+              method="GET"
+              endpoint="/api/deployment"
+              description="Deployment validation information"
+              loading={loading}
+              status={deploymentData?.status}
+              release={deploymentData?.release}
+              message={deploymentData?.message}
+            />
 
-        .card h2 {
-          margin: 9px 0;
-          font-size: 24px;
-        }
+            <EndpointCard
+              method="GET"
+              endpoint="/api/health"
+              description="API health check"
+              loading={loading}
+              status={healthData?.status}
+              release={healthData?.release}
+              message="Health endpoint responding successfully"
+            />
 
-        .card p {
-          margin: 0;
-          color: #68758b;
-          line-height: 1.7;
-        }
+            <EndpointCard
+              method="GET"
+              endpoint="/weatherforecast"
+              description="Weather forecast API"
+              loading={loading}
+              status={weatherData.length > 0 ? "Healthy" : undefined}
+              release="WeatherForecast"
+              message={
+                weatherData.length > 0
+                  ? `${weatherData.length} forecast records received`
+                  : "Loading weather data..."
+              }
+            />
+          </div>
+        </section>
 
-        .release-info {
-          margin-top: 20px;
-          padding: 13px 15px;
-          border-radius: 10px;
-          background: #f5f7fb;
-          border: 1px solid #e8ecf3;
-          font-size: 14px;
-        }
+        {/* Weather Forecast */}
+        <section style={{ marginTop: "45px" }}>
+          <h2>Weather Forecast</h2>
 
-        .validation {
-          background: #ffffff;
-          border-radius: 18px;
-          padding: 30px;
-          border: 1px solid #e7ebf2;
-          box-shadow: 0 8px 30px rgba(20, 35, 60, 0.06);
-          margin-bottom: 22px;
-        }
+          <p style={{ color: "#6b7280" }}>
+            Data retrieved from{" "}
+            <strong>/weatherforecast</strong>
+          </p>
 
-        .validation h2 {
-          margin: 0 0 8px;
-          font-size: 25px;
-        }
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: "16px",
+              marginTop: "20px",
+            }}
+          >
+            {weatherData.map((weather, index) => (
+              <div
+                key={index}
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "10px",
+                  padding: "20px",
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
+                }}
+              >
+                <h3 style={{ marginTop: 0 }}>
+                  {weather.summary}
+                </h3>
 
-        .validation-description {
-          color: #68758b;
-          line-height: 1.7;
-          margin-bottom: 24px;
-        }
+                <p>
+                  <strong>Date:</strong>{" "}
+                  {weather.date}
+                </p>
 
-        .info-grid {
-          display: grid;
-          grid-template-columns: repeat(
-            auto-fit,
-            minmax(210px, 1fr)
-          );
-          gap: 14px;
-        }
+                <p>
+                  <strong>Temperature:</strong>{" "}
+                  {weather.temperatureC}°C
+                </p>
 
-        .info-card {
-          background: #f7f9fc;
-          border: 1px solid #e5eaf2;
-          border-radius: 12px;
-          padding: 17px;
-        }
-
-        .info-title {
-          color: #7a8498;
-          font-size: 11px;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.8px;
-          margin-bottom: 8px;
-        }
-
-        .info-value {
-          font-size: 16px;
-          font-weight: 750;
-          word-break: break-word;
-        }
-
-        .loading,
-        .error {
-          padding: 18px;
-          border-radius: 12px;
-          font-weight: 600;
-        }
-
-        .loading {
-          background: #f5f7fb;
-          color: #68758b;
-        }
-
-        .error {
-          background: #fff1f1;
-          color: #a33a3a;
-          border: 1px solid #f1d4d4;
-        }
-
-        .footer {
-          background: #172033;
-          color: #ffffff;
-          border-radius: 18px;
-          padding: 30px;
-        }
-
-        .footer h2 {
-          margin: 0 0 10px;
-        }
-
-        .footer p {
-          color: #d4dbea;
-          line-height: 1.7;
-          margin: 0 0 20px;
-        }
-
-        .technology-list {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 9px;
-        }
-
-        .technology {
-          padding: 8px 12px;
-          border-radius: 999px;
-          background: rgba(255, 255, 255, 0.1);
-          font-size: 12px;
-          font-weight: 700;
-        }
-
-        @media (max-width: 600px) {
-          .app {
-            padding: 20px 14px;
-          }
-
-          .header {
-            padding: 24px;
-          }
-
-          h1 {
-            font-size: 30px;
-          }
-
-          .validation,
-          .footer {
-            padding: 24px;
-          }
-        }
-      `}</style>
-
-      <main className="container">
-
-        <header className="header">
-          <div className="header-top">
-
-            <div>
-              <div className="eyebrow">
-                UI-API-CICD
+                <p>
+                  <strong>Fahrenheit:</strong>{" "}
+                  {weather.temperatureF}°F
+                </p>
               </div>
-
-              <h1>
-                Release Validation Dashboard
-              </h1>
-
-              <p className="subtitle">
-                UI Release 3 validates the complete deployment path from
-                source code through GitHub Actions, Terraform, HashiCorp
-                Vault and Microsoft Azure.
-              </p>
-            </div>
-
-            <div className="release-badge">
-              ● RELEASE 3 ACTIVE
-            </div>
-
+            ))}
           </div>
-        </header>
-
-
-        <section className="cards">
-
-          <div className="card">
-            <div className="card-label">
-              Frontend
-            </div>
-
-            <h2>
-              React + Vite
-            </h2>
-
-            <p>
-              The frontend is built with React and Vite and deployed to
-              Azure Storage Static Website through GitHub Actions.
-            </p>
-
-            <div className="release-info">
-              <strong>UI Release:</strong> 3
-            </div>
-          </div>
-
-
-          <div className="card">
-            <div className="card-label">
-              Backend
-            </div>
-
-            <h2>
-              .NET 8 API
-            </h2>
-
-            <p>
-              The backend runs on Azure App Service and exposes deployment
-              and health information to the frontend.
-            </p>
-
-            <div className="release-info">
-              <strong>API Release:</strong>{" "}
-              {loading
-                ? "Checking..."
-                : apiError
-                  ? "Unavailable"
-                  : apiStatus?.version ?? "Unknown"}
-            </div>
-          </div>
-
         </section>
 
+        {/* API Information */}
+        <section style={{ marginTop: "45px" }}>
+          <h2>API Information</h2>
 
-        <section className="validation">
+          <div
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e5e7eb",
+              borderRadius: "10px",
+              padding: "25px",
+            }}
+          >
+            <p>
+              <strong>API URL:</strong>{" "}
+              {API_BASE_URL}
+            </p>
 
-          <h2>
-            Live Deployment Validation
-          </h2>
+            <p>
+              <strong>Platform:</strong>{" "}
+              {rootData?.platform || "Microsoft Azure"}
+            </p>
 
-          <p className="validation-description">
-            These values are retrieved directly from the deployed Azure API.
-            This confirms communication between the newly deployed frontend
-            and backend.
-          </p>
+            <p>
+              <strong>Infrastructure:</strong>{" "}
+              {rootData?.infrastructure || "Terraform"}
+            </p>
 
-          {loading && (
-            <div className="loading">
-              Loading deployment information...
-            </div>
-          )}
+            <p>
+              <strong>Pipeline:</strong>{" "}
+              {rootData?.pipeline || "GitHub Actions"}
+            </p>
 
-          {apiError && (
-            <div className="error">
-              {apiError}
-            </div>
-          )}
+            <p>
+              <strong>API Status:</strong>{" "}
+              {healthData?.status || "Checking..."}
+            </p>
 
-          {!loading && !apiError && (
-            <div className="info-grid">
-
-              <InfoCard
-                title="API Status"
-                value={apiStatus?.status ?? "Unknown"}
-              />
-
-              <InfoCard
-                title="API Version"
-                value={apiStatus?.version ?? "Unknown"}
-              />
-
-              <InfoCard
-                title="Deployment Status"
-                value={deployment?.status ?? "Unknown"}
-              />
-
-              <InfoCard
-                title="Deployment Version"
-                value={deployment?.version ?? "Unknown"}
-              />
-
-              <InfoCard
-                title="Release"
-                value={deployment?.release ?? "Unknown"}
-              />
-
-              <InfoCard
-                title="Pipeline"
-                value={deployment?.pipeline ?? "Unknown"}
-              />
-
-              <InfoCard
-                title="Infrastructure"
-                value={deployment?.infrastructure ?? "Unknown"}
-              />
-
-              <InfoCard
-                title="Platform"
-                value={deployment?.platform ?? "Unknown"}
-              />
-
-              <InfoCard
-                title="Deployment Time"
-                value={
-                  deployment?.timestamp
-                    ? new Date(
-                        deployment.timestamp
-                      ).toLocaleString()
-                    : "Unknown"
-                }
-              />
-
-            </div>
-          )}
-
+            <p>
+              <strong>API Version:</strong>{" "}
+              {healthData?.version || "Checking..."}
+            </p>
+          </div>
         </section>
 
-
-        <footer className="footer">
-
-          <h2>
-            CI/CD Release 3
-          </h2>
-
-          <p>
-            Updated frontend deployment validation using GitHub Actions,
-            Terraform-managed Azure infrastructure, HashiCorp Vault version
-            management and a .NET 8 API hosted on Azure App Service.
-          </p>
-
-          <div className="technology-list">
-            <span className="technology">GitHub Actions</span>
-            <span className="technology">Terraform</span>
-            <span className="technology">HashiCorp Secret Vault</span>
-            <span className="technology">React</span>
-            <span className="technology">Vite</span>
-            <span className="technology">.NET 8</span>
-            <span className="technology">Azure Storage</span>
-            <span className="technology">Azure App Service</span>
-          </div>
-
-        </footer>
-
+        {/* Refresh */}
+        <div style={{ textAlign: "center", marginTop: "40px" }}>
+          <button
+            onClick={fetchApiData}
+            style={{
+              padding: "12px 24px",
+              border: "none",
+              borderRadius: "6px",
+              background: "#2563eb",
+              color: "#ffffff",
+              cursor: "pointer",
+              fontSize: "15px",
+              fontWeight: "bold",
+            }}
+          >
+            Refresh API Data
+          </button>
+        </div>
       </main>
+
+      {/* Footer */}
+      <footer
+        style={{
+          marginTop: "60px",
+          padding: "25px",
+          background: "#111827",
+          color: "#9ca3af",
+          textAlign: "center",
+        }}
+      >
+        UI-API-CICD | Release 4 | Terraform + GitHub Actions + Azure
+      </footer>
     </div>
   );
 }
-
 
 function InfoCard({
   title,
   value,
+  subtitle,
 }: {
   title: string;
   value: string;
+  subtitle: string;
 }) {
   return (
-    <div className="info-card">
-      <div className="info-title">
+    <div
+      style={{
+        background: "#ffffff",
+        border: "1px solid #e5e7eb",
+        borderRadius: "10px",
+        padding: "24px",
+        boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
+      }}
+    >
+      <p
+        style={{
+          margin: 0,
+          color: "#6b7280",
+          fontSize: "14px",
+        }}
+      >
         {title}
-      </div>
+      </p>
 
-      <div className="info-value">
+      <h2 style={{ margin: "10px 0 5px" }}>
         {value}
-      </div>
+      </h2>
+
+      <p
+        style={{
+          margin: 0,
+          color: "#6b7280",
+          fontSize: "14px",
+        }}
+      >
+        {subtitle}
+      </p>
     </div>
   );
 }
 
+function EndpointCard({
+  method,
+  endpoint,
+  description,
+  loading,
+  status,
+  release,
+  message,
+}: {
+  method: string;
+  endpoint: string;
+  description: string;
+  loading: boolean;
+  status?: string;
+  release?: string;
+  message?: string;
+}) {
+  return (
+    <div
+      style={{
+        background: "#ffffff",
+        border: "1px solid #e5e7eb",
+        borderRadius: "10px",
+        padding: "22px",
+        boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          marginBottom: "15px",
+        }}
+      >
+        <span
+          style={{
+            background: "#dcfce7",
+            color: "#166534",
+            padding: "5px 9px",
+            borderRadius: "5px",
+            fontSize: "12px",
+            fontWeight: "bold",
+          }}
+        >
+          {method}
+        </span>
+
+        <code
+          style={{
+            fontSize: "15px",
+            fontWeight: "bold",
+          }}
+        >
+          {endpoint}
+        </code>
+      </div>
+
+      <p
+        style={{
+          color: "#6b7280",
+          fontSize: "14px",
+        }}
+      >
+        {description}
+      </p>
+
+      {loading ? (
+        <p>Checking endpoint...</p>
+      ) : (
+        <>
+          <p>
+            <strong>Status:</strong>{" "}
+            {status || "Unavailable"}
+          </p>
+
+          <p>
+            <strong>Release:</strong>{" "}
+            {release || "N/A"}
+          </p>
+
+          <p
+            style={{
+              fontSize: "13px",
+              color: "#6b7280",
+            }}
+          >
+            {message || "No response received"}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
 
 export default App;
