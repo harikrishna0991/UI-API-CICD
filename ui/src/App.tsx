@@ -45,7 +45,7 @@ function App() {
             <span className="status-indicator"></span>
             <div>
               <strong>Deployment Platform Operational</strong>
-              <small>All configured services are available</small>
+              <small>Latest UI deployment through GitHub Actions</small>
             </div>
           </div>
 
@@ -194,11 +194,13 @@ function App() {
               CI/CD VALIDATION
             </div>
 
-            <h2>Frontend Deployment Test</h2>
+            <h2>Frontend Deployment Test — Updated</h2>
 
             <p>
-              Modify the UI source code and push the change to the
-              main branch to trigger the automated deployment pipeline.
+              This UI has been updated to validate the automated
+              GitHub Actions deployment pipeline. Commit this change
+              to the main branch and verify that the new version is
+              deployed to Azure Storage.
             </p>
           </div>
 

@@ -227,7 +227,7 @@ app.MapGet("/", () =>
 
                 <div class="status">
                     <span>●</span>
-                    Service is operational
+                    Service is operational - CI/CD Deployment Updated
                 </div>
 
                 <div class="section">
@@ -316,9 +316,10 @@ app.MapGet("/api/status", () =>
     {
         status = "Healthy",
         service = "API",
-        version = "2.0",
+        version = "3.0",
         deployment = "GitHub Actions",
         infrastructure = "Terraform",
+        message = "CI/CD deployment updated successfully",
         timestamp = DateTime.UtcNow
     });
 });
@@ -342,6 +343,20 @@ app.MapGet("/api/health", () =>
     {
         status = "Healthy",
         service = "UI API CI/CD",
+        timestamp = DateTime.UtcNow
+    });
+});
+
+app.MapGet("/api/deployment", () =>
+{
+    return Results.Ok(new
+    {
+        status = "Deployed",
+        version = "3.0",
+        pipeline = "GitHub Actions",
+        infrastructure = "Terraform",
+        platform = "Microsoft Azure",
+        message = "API deployment validation successful",
         timestamp = DateTime.UtcNow
     });
 });
