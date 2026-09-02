@@ -5,22 +5,35 @@ on:
     branches:
       - main
 
+  workflow_dispatch:
+    inputs:
+      deployment_tag:
+        description: "Optional deployment tag (example: dev-1.0.0)"
+        required: false
+        type: string
+
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 env:
   TF_WORKING_DIR: terraform
   UI_WORKING_DIR: ui
   API_WORKING_DIR: api
 
+  AZURE_STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
+  API_APP_NAME: app-api-cicd
+
+  VAULT_ADDR: https://172.198.74.239:8200
+  VAULT_ROLE: ui-api-cicd
+  VAULT_SECRET_PATH: cicd/data/ui-api-cicd
+
 jobs:
-  infrastructure:
+
+  terraform:
     name: Terraform Infrastructure
     runs-on: ubuntu-latest
-    env:
-      ARM_USE_OIDC: true
-      ARM_USE_AZUREAD: true
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,7 +50,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init
+        run: terraform init -reconfigure
 
       - name: Terraform Validate
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -45,63 +58,117 @@ jobs:
 
       - name: Terraform Plan
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform plan -out=tfplan
+        run: terraform plan
 
       - name: Terraform Apply
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform apply -auto-approve tfplan
+        run: terraform apply -auto-approve
+
+
+  vault-version:
+    name: Get Version From Vault
+    runs-on: ubuntu-latest
+    needs: terraform
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      deployment_tag: ${{ steps.version.outputs.deployment_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to Vault using GitHub OIDC
+        uses: hashicorp/vault-action@v3
+        id: vault
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: ${{ env.VAULT_ROLE }}
+          jwtGithubAudience: https://github.com/harikrishna0991/UI-API-CICD
+          caCertificate: ${{ vars.VAULT_CA_CERT }}
+          secrets: |
+            ${{ env.VAULT_SECRET_PATH }} version | VERSION
+
+      - name: Determine Deployment Version
+        id: version
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.deployment_tag }}" ]; then
+            DEPLOYMENT_TAG="${{ github.event.inputs.deployment_tag }}"
+            VERSION="${DEPLOYMENT_TAG#dev-}"
+          else
+            VERSION="${{ steps.vault.outputs.VERSION }}"
+            DEPLOYMENT_TAG="dev-${VERSION}"
+          fi
+
+          echo "Version: ${VERSION}"
+          echo "Deployment tag: ${DEPLOYMENT_TAG}"
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "deployment_tag=${DEPLOYMENT_TAG}" >> "$GITHUB_OUTPUT"
+
 
   detect-changes:
     name: Detect UI API Changes
-    needs: infrastructure
     runs-on: ubuntu-latest
+    needs: vault-version
+
     outputs:
       ui_changed: ${{ steps.changes.outputs.ui_changed }}
       api_changed: ${{ steps.changes.outputs.api_changed }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 2
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.deployment_tag || github.ref }}
 
       - name: Detect Changes
         id: changes
         shell: bash
         run: |
-          if git rev-parse HEAD^ >/dev/null 2>&1
-          then
-            CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
-
-            echo "Changed files:"
-            echo "$CHANGED_FILES"
-
-            if echo "$CHANGED_FILES" | grep -q '^ui/'
-            then
-              echo "ui_changed=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "ui_changed=false" >> "$GITHUB_OUTPUT"
-            fi
-
-            if echo "$CHANGED_FILES" | grep -q '^api/'
-            then
-              echo "api_changed=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "api_changed=false" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "First commit detected"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.deployment_tag }}" ]; then
+            echo "Manual tag deployment selected."
             echo "ui_changed=true" >> "$GITHUB_OUTPUT"
             echo "api_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          UI_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^ui/' || true)
+          API_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^api/' || true)
+
+          if [ -n "$UI_CHANGED" ]; then
+            echo "ui_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ui_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -n "$API_CHANGED" ]; then
+            echo "api_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "api_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
 
   build-ui:
     name: Build UI
-    needs: detect-changes
-    if: needs.detect-changes.outputs.ui_changed == 'true'
     runs-on: ubuntu-latest
+    needs: detect-changes
+
+    if: needs.detect-changes.outputs.ui_changed == 'true'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.deployment_tag || github.ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -118,25 +185,24 @@ jobs:
         working-directory: ${{ env.UI_WORKING_DIR }}
         run: npm run build
 
-      - name: Upload UI Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ui-build
-          path: ui/dist
 
   build-api:
     name: Build API
-    needs: detect-changes
-    if: needs.detect-changes.outputs.api_changed == 'true'
     runs-on: ubuntu-latest
+    needs: detect-changes
+
+    if: needs.detect-changes.outputs.api_changed == 'true'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.deployment_tag || github.ref }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: '8.0.x'
 
       - name: Restore
         working-directory: ${{ env.API_WORKING_DIR }}
@@ -148,25 +214,38 @@ jobs:
 
       - name: Publish
         working-directory: ${{ env.API_WORKING_DIR }}
-        run: dotnet publish --configuration Release --output ${{ github.workspace }}/api-publish --no-build
+        run: dotnet publish --configuration Release --output ./publish --no-restore
 
-      - name: Upload API Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: api-build
-          path: api-publish
 
   deploy-ui:
     name: Deploy UI
-    needs: build-ui
-    if: needs.build-ui.result == 'success'
     runs-on: ubuntu-latest
+
+    needs:
+      - detect-changes
+      - build-ui
+      - vault-version
+
+    if: needs.detect-changes.outputs.ui_changed == 'true'
+
     steps:
-      - name: Download UI Artifact
-        uses: actions/download-artifact@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          name: ui-build
-          path: ui-build
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.deployment_tag || github.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install Dependencies
+        working-directory: ${{ env.UI_WORKING_DIR }}
+        run: npm ci
+
+      - name: Build UI
+        working-directory: ${{ env.UI_WORKING_DIR }}
+        run: npm run build
 
       - name: Azure Login
         uses: azure/login@v2
@@ -175,26 +254,45 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy UI
+      - name: Deploy UI to Azure Storage
         run: |
           az storage blob upload-batch \
-            --account-name "${{ vars.AZURE_STORAGE_ACCOUNT }}" \
+            --account-name "${{ env.AZURE_STORAGE_ACCOUNT }}" \
             --destination '$web' \
-            --source ui-build \
-            --auth-mode login \
-            --overwrite
+            --source "${{ env.UI_WORKING_DIR }}/dist" \
+            --overwrite \
+            --auth-mode login
+
 
   deploy-api:
     name: Deploy API
-    needs: build-api
-    if: needs.build-api.result == 'success'
     runs-on: ubuntu-latest
+
+    needs:
+      - detect-changes
+      - build-api
+      - vault-version
+
+    if: needs.detect-changes.outputs.api_changed == 'true'
+
     steps:
-      - name: Download API Artifact
-        uses: actions/download-artifact@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          name: api-build
-          path: api-build
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.deployment_tag || github.ref }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        working-directory: ${{ env.API_WORKING_DIR }}
+        run: dotnet restore
+
+      - name: Publish
+        working-directory: ${{ env.API_WORKING_DIR }}
+        run: dotnet publish --configuration Release --output ./publish --no-restore
 
       - name: Azure Login
         uses: azure/login@v2
@@ -203,8 +301,105 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy API
+      - name: Deploy API to Azure App Service
         uses: azure/webapps-deploy@v3
         with:
-          app-name: app-api-cicd
-          package: api-build
+          app-name: ${{ env.API_APP_NAME }}
+          package: ${{ env.API_WORKING_DIR }}/publish
+
+
+  create-release-tag:
+    name: Create Deployment Tag
+    runs-on: ubuntu-latest
+
+    needs:
+      - vault-version
+      - detect-changes
+      - deploy-ui
+      - deploy-api
+
+    if: |
+      always() &&
+      needs.vault-version.result == 'success' &&
+      (
+        needs.deploy-ui.result == 'success' ||
+        needs.deploy-api.result == 'success'
+      ) &&
+      github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create Deployment Tag
+        shell: bash
+        run: |
+          TAG="${{ needs.vault-version.outputs.deployment_tag }}"
+
+          echo "Creating deployment tag: ${TAG}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git tag "${TAG}"
+          git push origin "${TAG}"
+
+
+  update-vault-version:
+    name: Update Vault Version
+    runs-on: ubuntu-latest
+
+    needs:
+      - vault-version
+      - create-release-tag
+
+    if: |
+      needs.create-release-tag.result == 'success' &&
+      github.event_name == 'push'
+
+    steps:
+      - name: Login to Vault using GitHub OIDC
+        uses: hashicorp/vault-action@v3
+        id: vault
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: ${{ env.VAULT_ROLE }}
+          jwtGithubAudience: https://github.com/harikrishna0991/UI-API-CICD
+          caCertificate: ${{ vars.VAULT_CA_CERT }}
+          exportToken: true
+          secrets: |
+            ${{ env.VAULT_SECRET_PATH }} version | CURRENT_VERSION
+
+      - name: Calculate Next Version
+        id: next
+        shell: bash
+        run: |
+          CURRENT_VERSION="${{ steps.vault.outputs.CURRENT_VERSION }}"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+          NEXT_PATCH=$((PATCH + 1))
+
+          NEXT_VERSION="${MAJOR}.${MINOR}.${NEXT_PATCH}"
+
+          echo "Current version: ${CURRENT_VERSION}"
+          echo "Next version: ${NEXT_VERSION}"
+
+          echo "next_version=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Write Next Version To Vault
+        env:
+          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        shell: bash
+        run: |
+          curl \
+            --fail \
+            --request POST \
+            --header "X-Vault-Token: ${VAULT_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data "{\"data\":{\"version\":\"${{ steps.next.outputs.next_version }}\"}}" \
+            --cacert <(echo "${{ vars.VAULT_CA_CERT }}" | base64 -d) \
+            "${{ env.VAULT_ADDR }}/v1/cicd/data/ui-api-cicd"
