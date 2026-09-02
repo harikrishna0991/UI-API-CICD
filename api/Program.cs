@@ -58,7 +58,7 @@ app.MapGet("/api/deployment", () =>
     return Results.Ok(new
     {
         status = "Deployed",
-        version = "4.0",
+        version = "4.0.0",
         release = "API-Release-4",
         pipeline = "GitHub Actions",
         infrastructure = "Terraform",

@@ -479,7 +479,7 @@ function App() {
           <div className="technology-list">
             <span className="technology">GitHub Actions</span>
             <span className="technology">Terraform</span>
-            <span className="technology">HashiCorp Vault</span>
+            <span className="technology">HashiCorp Secret Vault</span>
             <span className="technology">React</span>
             <span className="technology">Vite</span>
             <span className="technology">.NET 8</span>
