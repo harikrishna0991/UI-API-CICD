@@ -1,543 +1,884 @@
 ﻿import { useEffect, useState } from "react";
+import "./App.css";
 
-const API_BASE_URL = "https://app-api-cicd.azurewebsites.net";
+const API_BASE = "https://app-api-cicd.azurewebsites.net";
 
-type ApiResponse = {
-  status?: string;
-  service?: string;
-  version?: string;
-  release?: string;
-  message?: string;
-  pipeline?: string;
-  infrastructure?: string;
-  platform?: string;
-  timestamp?: string;
-  [key: string]: unknown;
+type DashboardData = {
+  resources: number;
+  healthyResources: number;
+  warnings: number;
+  critical: number;
+  deployments: number;
+  successfulDeployments: number;
+  failedDeployments: number;
+  uptime: number;
+  monthlyCost: number;
 };
 
-type WeatherForecast = {
-  date: string;
-  temperatureC: number;
-  temperatureF: number;
-  summary: string;
+type Service = {
+  name: string;
+  type: string;
+  status: string;
+  region: string;
+  endpoint: string;
+};
+
+type Deployment = {
+  version: string;
+  component: string;
+  status: string;
+  environment: string;
+  timestamp: string;
+};
+
+type HealthData = {
+  status: string;
+  version: string;
+  release: string;
+  timestamp: string;
 };
 
 function App() {
-  const [rootData, setRootData] = useState<ApiResponse | null>(null);
-  const [statusData, setStatusData] = useState<ApiResponse | null>(null);
-  const [deploymentData, setDeploymentData] =
-    useState<ApiResponse | null>(null);
-  const [healthData, setHealthData] = useState<ApiResponse | null>(null);
-  const [weatherData, setWeatherData] = useState<WeatherForecast[]>([]);
-
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [services, setServices] = useState<Service[]>([]);
+  const [deployments, setDeployments] = useState<Deployment[]>([]);
+  const [health, setHealth] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState(new Date());
 
-  const fetchApiData = async () => {
+  const loadDashboard = async () => {
     try {
       setLoading(true);
-      setError("");
 
       const [
-        rootResponse,
-        statusResponse,
-        deploymentResponse,
+        dashboardResponse,
+        servicesResponse,
+        deploymentsResponse,
         healthResponse,
-        weatherResponse,
       ] = await Promise.all([
-        fetch(`${API_BASE_URL}/`),
-        fetch(`${API_BASE_URL}/api/status`),
-        fetch(`${API_BASE_URL}/api/deployment`),
-        fetch(`${API_BASE_URL}/api/health`),
-        fetch(`${API_BASE_URL}/weatherforecast`),
+        fetch(`${API_BASE}/api/dashboard`),
+        fetch(`${API_BASE}/api/services`),
+        fetch(`${API_BASE}/api/deployments`),
+        fetch(`${API_BASE}/api/health`),
       ]);
 
-      if (
-        !rootResponse.ok ||
-        !statusResponse.ok ||
-        !deploymentResponse.ok ||
-        !healthResponse.ok ||
-        !weatherResponse.ok
-      ) {
-        throw new Error("One or more API endpoints returned an error.");
-      }
+      const dashboardData = await dashboardResponse.json();
+      const servicesData = await servicesResponse.json();
+      const deploymentsData = await deploymentsResponse.json();
+      const healthData = await healthResponse.json();
 
-      const root = await rootResponse.json();
-      const status = await statusResponse.json();
-      const deployment = await deploymentResponse.json();
-      const health = await healthResponse.json();
-      const weather = await weatherResponse.json();
-
-      setRootData(root);
-      setStatusData(status);
-      setDeploymentData(deployment);
-      setHealthData(health);
-      setWeatherData(weather);
-    } catch (err) {
-      console.error(err);
-      setError(
-        "Unable to connect to the API. Please check the API deployment and network connection."
-      );
+      setDashboard(dashboardData);
+      setServices(servicesData);
+      setDeployments(deploymentsData);
+      setHealth(healthData);
+      setLastUpdated(new Date());
+    } catch (error) {
+      console.error("Dashboard loading failed:", error);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchApiData();
+    loadDashboard();
   }, []);
 
+  const formatTime = (date: string) => {
+    return new Date(date).toLocaleString();
+  };
+
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#f5f7fb",
-        fontFamily: "Arial, sans-serif",
-        color: "#1f2937",
-      }}
-    >
-      {/* Header */}
-      <header
-        style={{
-          background: "#111827",
-          color: "#ffffff",
-          padding: "24px 40px",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: "1200px",
-            margin: "0 auto",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
+    <div className="app-shell">
+
+      {/* SIDEBAR */}
+
+      <aside className="sidebar">
+
+        <div className="brand">
+          <div className="brand-logo">
+            WW
+          </div>
+
           <div>
-            <h1 style={{ margin: 0 }}>Release Validation Dashboard</h1>
-            <p style={{ margin: "8px 0 0", color: "#d1d5db" }}>
-              UI-API-CICD | Azure + Terraform + GitHub Actions
-            </p>
-          </div>
-
-          <div
-            style={{
-              padding: "8px 14px",
-              borderRadius: "20px",
-              background: "#065f46",
-              fontSize: "14px",
-              fontWeight: "bold",
-            }}
-          >
-            ● RELEASE 4 ACTIVE
-          </div>
-        </div>
-      </header>
-
-      {/* Main */}
-      <main
-        style={{
-          maxWidth: "1200px",
-          margin: "0 auto",
-          padding: "40px",
-        }}
-      >
-        {/* Deployment Summary */}
-        <section>
-          <h2>Deployment Summary</h2>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: "20px",
-              marginTop: "20px",
-            }}
-          >
-            <InfoCard
-              title="UI Release"
-              value="Release 4"
-              subtitle="React / Vite"
-            />
-
-            <InfoCard
-              title="API Release"
-              value={statusData?.release || "Loading..."}
-              subtitle={statusData?.version || ""}
-            />
-
-            <InfoCard
-              title="Infrastructure"
-              value="Azure"
-              subtitle="Managed by Terraform"
-            />
-
-            <InfoCard
-              title="Pipeline"
-              value="GitHub Actions"
-              subtitle="CI/CD Automated"
-            />
-          </div>
-        </section>
-
-        {/* API Endpoints */}
-        <section style={{ marginTop: "45px" }}>
-          <h2>API Endpoints</h2>
-
-          <p style={{ color: "#6b7280" }}>
-            Live responses from the deployed .NET 8 API.
-          </p>
-
-          {error && (
-            <div
-              style={{
-                marginTop: "20px",
-                padding: "16px",
-                background: "#fee2e2",
-                border: "1px solid #fecaca",
-                borderRadius: "8px",
-                color: "#991b1b",
-              }}
-            >
-              {error}
+            <div className="brand-name">
+              WorkWixa
             </div>
-          )}
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(300px, 1fr))",
-              gap: "20px",
-              marginTop: "20px",
-            }}
-          >
-            <EndpointCard
-              method="GET"
-              endpoint="/"
-              description="API root and release information"
-              loading={loading}
-              status={rootData?.status}
-              release={rootData?.release}
-              message={rootData?.message}
-            />
-
-            <EndpointCard
-              method="GET"
-              endpoint="/api/status"
-              description="API deployment status"
-              loading={loading}
-              status={statusData?.status}
-              release={statusData?.release}
-              message={statusData?.message}
-            />
-
-            <EndpointCard
-              method="GET"
-              endpoint="/api/deployment"
-              description="Deployment validation information"
-              loading={loading}
-              status={deploymentData?.status}
-              release={deploymentData?.release}
-              message={deploymentData?.message}
-            />
-
-            <EndpointCard
-              method="GET"
-              endpoint="/api/health"
-              description="API health check"
-              loading={loading}
-              status={healthData?.status}
-              release={healthData?.release}
-              message="Health endpoint responding successfully"
-            />
-
-            <EndpointCard
-              method="GET"
-              endpoint="/weatherforecast"
-              description="Weather forecast API"
-              loading={loading}
-              status={weatherData.length > 0 ? "Healthy" : undefined}
-              release="WeatherForecast"
-              message={
-                weatherData.length > 0
-                  ? `${weatherData.length} forecast records received`
-                  : "Loading weather data..."
-              }
-            />
+            <div className="brand-subtitle">
+              Cloud Platform
+            </div>
           </div>
-        </section>
-
-        {/* Weather Forecast */}
-        <section style={{ marginTop: "45px" }}>
-          <h2>Weather Forecast</h2>
-
-          <p style={{ color: "#6b7280" }}>
-            Data retrieved from{" "}
-            <strong>/weatherforecast</strong>
-          </p>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(200px, 1fr))",
-              gap: "16px",
-              marginTop: "20px",
-            }}
-          >
-            {weatherData.map((weather, index) => (
-              <div
-                key={index}
-                style={{
-                  background: "#ffffff",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "10px",
-                  padding: "20px",
-                  boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
-                }}
-              >
-                <h3 style={{ marginTop: 0 }}>
-                  {weather.summary}
-                </h3>
-
-                <p>
-                  <strong>Date:</strong>{" "}
-                  {weather.date}
-                </p>
-
-                <p>
-                  <strong>Temperature:</strong>{" "}
-                  {weather.temperatureC}°C
-                </p>
-
-                <p>
-                  <strong>Fahrenheit:</strong>{" "}
-                  {weather.temperatureF}°F
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* API Information */}
-        <section style={{ marginTop: "45px" }}>
-          <h2>API Information</h2>
-
-          <div
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e5e7eb",
-              borderRadius: "10px",
-              padding: "25px",
-            }}
-          >
-            <p>
-              <strong>API URL:</strong>{" "}
-              {API_BASE_URL}
-            </p>
-
-            <p>
-              <strong>Platform:</strong>{" "}
-              {rootData?.platform || "Microsoft Azure"}
-            </p>
-
-            <p>
-              <strong>Infrastructure:</strong>{" "}
-              {rootData?.infrastructure || "Terraform"}
-            </p>
-
-            <p>
-              <strong>Pipeline:</strong>{" "}
-              {rootData?.pipeline || "GitHub Actions"}
-            </p>
-
-            <p>
-              <strong>API Status:</strong>{" "}
-              {healthData?.status || "Checking..."}
-            </p>
-
-            <p>
-              <strong>API Version:</strong>{" "}
-              {healthData?.version || "Checking..."}
-            </p>
-          </div>
-        </section>
-
-        {/* Refresh */}
-        <div style={{ textAlign: "center", marginTop: "40px" }}>
-          <button
-            onClick={fetchApiData}
-            style={{
-              padding: "12px 24px",
-              border: "none",
-              borderRadius: "6px",
-              background: "#2563eb",
-              color: "#ffffff",
-              cursor: "pointer",
-              fontSize: "15px",
-              fontWeight: "bold",
-            }}
-          >
-            Refresh API Data
-          </button>
         </div>
+
+        <div className="workspace">
+          <div className="workspace-label">
+            WORKSPACE
+          </div>
+
+          <div className="workspace-selector">
+            <div>
+              <strong>Production</strong>
+              <span>Enterprise Environment</span>
+            </div>
+
+            <span className="chevron">
+              ˅
+            </span>
+          </div>
+        </div>
+
+        <nav className="navigation">
+
+          <div className="nav-section">
+            GENERAL
+          </div>
+
+          <a className="nav-item active">
+            <span className="nav-icon">▦</span>
+            Overview
+          </a>
+
+          <a className="nav-item">
+            <span className="nav-icon">◫</span>
+            Resources
+          </a>
+
+          <a className="nav-item">
+            <span className="nav-icon">◉</span>
+            Monitoring
+          </a>
+
+          <a className="nav-item">
+            <span className="nav-icon">⚙</span>
+            Settings
+          </a>
+
+          <div className="nav-section">
+            OPERATIONS
+          </div>
+
+          <a className="nav-item">
+            <span className="nav-icon">⇧</span>
+            Deployments
+            <span className="nav-badge">3</span>
+          </a>
+
+          <a className="nav-item">
+            <span className="nav-icon">⌁</span>
+            Activity Log
+          </a>
+
+          <a className="nav-item">
+            <span className="nav-icon">♢</span>
+            Infrastructure
+          </a>
+
+          <div className="nav-section">
+            MANAGEMENT
+          </div>
+
+          <a className="nav-item">
+            <span className="nav-icon">♙</span>
+            Users
+          </a>
+
+          <a className="nav-item">
+            <span className="nav-icon">▤</span>
+            Reports
+          </a>
+
+        </nav>
+
+        <div className="sidebar-bottom">
+
+          <div className="support-card">
+            <div className="support-icon">
+              ?
+            </div>
+
+            <div>
+              <strong>Need help?</strong>
+              <span>View documentation</span>
+            </div>
+          </div>
+
+          <div className="profile">
+
+            <div className="avatar">
+              HK
+            </div>
+
+            <div className="profile-info">
+              <strong>Administrator</strong>
+              <span>Platform Admin</span>
+            </div>
+
+            <span className="profile-menu">
+              •••
+            </span>
+
+          </div>
+
+        </div>
+
+      </aside>
+
+
+      {/* MAIN AREA */}
+
+      <main className="main">
+
+        {/* TOP BAR */}
+
+        <header className="topbar">
+
+          <div className="breadcrumb">
+            <span>WorkWixa</span>
+            <span>/</span>
+            <strong>Overview</strong>
+          </div>
+
+          <div className="topbar-actions">
+
+            <div className="search">
+              <span>⌕</span>
+              <input
+                placeholder="Search resources..."
+              />
+              <kbd>Ctrl K</kbd>
+            </div>
+
+            <button className="icon-button">
+              ◔
+            </button>
+
+            <button className="icon-button notification">
+              ♢
+              <span></span>
+            </button>
+
+            <div className="top-avatar">
+              HK
+            </div>
+
+          </div>
+
+        </header>
+
+
+        {/* CONTENT */}
+
+        <div className="content">
+
+          {/* PAGE HEADER */}
+
+          <section className="page-header">
+
+            <div>
+
+              <div className="eyebrow">
+                CLOUD MANAGEMENT
+              </div>
+
+              <h1>
+                Resource Overview
+              </h1>
+
+              <p>
+                Monitor your applications, infrastructure and
+                deployment environment from one place.
+              </p>
+
+            </div>
+
+            <div className="header-actions">
+
+              <button
+                className="secondary-button"
+                onClick={loadDashboard}
+              >
+                ↻ Refresh
+              </button>
+
+              <button className="primary-button">
+                + Create Resource
+              </button>
+
+            </div>
+
+          </section>
+
+
+          {/* STATUS BAR */}
+
+          <section className="status-strip">
+
+            <div className="status-main">
+
+              <span className="status-dot"></span>
+
+              <div>
+                <strong>
+                  All systems operational
+                </strong>
+
+                <span>
+                  Production environment is running normally
+                </span>
+              </div>
+
+            </div>
+
+            <div className="updated">
+              Updated {lastUpdated.toLocaleTimeString()}
+            </div>
+
+          </section>
+
+
+          {/* METRICS */}
+
+          <section className="metrics-grid">
+
+            <MetricCard
+              title="Total Resources"
+              value={dashboard?.resources ?? "--"}
+              detail="Across production"
+              icon="▦"
+            />
+
+            <MetricCard
+              title="Healthy Resources"
+              value={dashboard?.healthyResources ?? "--"}
+              detail={`${dashboard?.resources
+                ? Math.round(
+                    ((dashboard.healthyResources /
+                      dashboard.resources) *
+                      100)
+                  )
+                : 0}% healthy`}
+              icon="✓"
+              positive
+            />
+
+            <MetricCard
+              title="Deployments"
+              value={dashboard?.deployments ?? "--"}
+              detail={`${dashboard?.successfulDeployments ?? 0} successful`}
+              icon="⇧"
+            />
+
+            <MetricCard
+              title="Platform Uptime"
+              value={
+                dashboard
+                  ? `${dashboard.uptime}%`
+                  : "--"
+              }
+              detail="Last 30 days"
+              icon="◉"
+              positive
+            />
+
+          </section>
+
+
+          {/* TWO COLUMN */}
+
+          <section className="dashboard-grid">
+
+            {/* RESOURCE HEALTH */}
+
+            <div className="panel">
+
+              <div className="panel-header">
+
+                <div>
+                  <h2>Resource Health</h2>
+                  <span>
+                    Current infrastructure status
+                  </span>
+                </div>
+
+                <button className="view-button">
+                  View all →
+                </button>
+
+              </div>
+
+              <div className="health-content">
+
+                <div className="health-ring">
+
+                  <div className="ring-center">
+                    <strong>
+                      {dashboard?.resources ?? "--"}
+                    </strong>
+                    <span>Resources</span>
+                  </div>
+
+                </div>
+
+                <div className="health-list">
+
+                  <HealthRow
+                    label="Healthy"
+                    value={
+                      dashboard?.healthyResources ?? 0
+                    }
+                    className="healthy"
+                  />
+
+                  <HealthRow
+                    label="Warning"
+                    value={
+                      dashboard?.warnings ?? 0
+                    }
+                    className="warning"
+                  />
+
+                  <HealthRow
+                    label="Critical"
+                    value={
+                      dashboard?.critical ?? 0
+                    }
+                    className="critical"
+                  />
+
+                </div>
+
+              </div>
+
+            </div>
+
+
+            {/* PLATFORM */}
+
+            <div className="panel">
+
+              <div className="panel-header">
+
+                <div>
+                  <h2>Platform Information</h2>
+                  <span>
+                    Application environment
+                  </span>
+                </div>
+
+              </div>
+
+              <div className="platform-list">
+
+                <InfoRow
+                  label="Environment"
+                  value="Production"
+                />
+
+                <InfoRow
+                  label="Cloud Provider"
+                  value="Microsoft Azure"
+                />
+
+                <InfoRow
+                  label="Region"
+                  value="Central India"
+                />
+
+                <InfoRow
+                  label="API Version"
+                  value={health?.version ?? "--"}
+                />
+
+                <InfoRow
+                  label="Release"
+                  value={health?.release ?? "--"}
+                />
+
+                <InfoRow
+                  label="Infrastructure"
+                  value="Terraform"
+                />
+
+              </div>
+
+            </div>
+
+          </section>
+
+
+          {/* SERVICES */}
+
+          <section className="panel services-panel">
+
+            <div className="panel-header">
+
+              <div>
+                <h2>Application Services</h2>
+                <span>
+                  Connected services and infrastructure
+                </span>
+              </div>
+
+              <button className="view-button">
+                Manage services →
+              </button>
+
+            </div>
+
+            <div className="table-container">
+
+              <table>
+
+                <thead>
+
+                  <tr>
+                    <th>SERVICE</th>
+                    <th>TYPE</th>
+                    <th>STATUS</th>
+                    <th>REGION</th>
+                    <th>ENDPOINT</th>
+                  </tr>
+
+                </thead>
+
+                <tbody>
+
+                  {services.map((service) => (
+
+                    <tr key={service.name}>
+
+                      <td>
+                        <div className="service-name">
+
+                          <div className="service-icon">
+                            {service.name
+                              .charAt(0)}
+                          </div>
+
+                          <strong>
+                            {service.name}
+                          </strong>
+
+                        </div>
+                      </td>
+
+                      <td>
+                        {service.type}
+                      </td>
+
+                      <td>
+
+                        <span className="status-pill healthy-pill">
+                          <span></span>
+                          {service.status}
+                        </span>
+
+                      </td>
+
+                      <td>
+                        {service.region}
+                      </td>
+
+                      <td>
+
+                        <span className="endpoint">
+                          {service.endpoint}
+                        </span>
+
+                      </td>
+
+                    </tr>
+
+                  ))}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+          </section>
+
+
+          {/* DEPLOYMENTS */}
+
+          <section className="panel">
+
+            <div className="panel-header">
+
+              <div>
+                <h2>Recent Deployments</h2>
+                <span>
+                  Latest CI/CD activity
+                </span>
+              </div>
+
+              <button className="view-button">
+                View deployment history →
+              </button>
+
+            </div>
+
+            <div className="table-container">
+
+              <table>
+
+                <thead>
+
+                  <tr>
+                    <th>VERSION</th>
+                    <th>COMPONENT</th>
+                    <th>STATUS</th>
+                    <th>ENVIRONMENT</th>
+                    <th>DEPLOYED</th>
+                  </tr>
+
+                </thead>
+
+                <tbody>
+
+                  {deployments.map((deployment) => (
+
+                    <tr key={`${deployment.version}-${deployment.timestamp}`}>
+
+                      <td>
+                        <strong className="version">
+                          {deployment.version}
+                        </strong>
+                      </td>
+
+                      <td>
+                        {deployment.component}
+                      </td>
+
+                      <td>
+
+                        <span
+                          className={
+                            deployment.status ===
+                            "Succeeded"
+                              ? "status-pill healthy-pill"
+                              : "status-pill failed-pill"
+                          }
+                        >
+
+                          <span></span>
+
+                          {deployment.status}
+
+                        </span>
+
+                      </td>
+
+                      <td>
+                        {deployment.environment}
+                      </td>
+
+                      <td>
+                        {formatTime(
+                          deployment.timestamp
+                        )}
+                      </td>
+
+                    </tr>
+
+                  ))}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+          </section>
+
+
+          {/* API FOOTER */}
+
+          <section className="api-footer">
+
+            <div>
+
+              <div className="api-indicator">
+                <span></span>
+                API Connected
+              </div>
+
+              <strong>
+                Enterprise Cloud API
+              </strong>
+
+              <p>
+                Last health check:
+                {" "}
+                {health
+                  ? formatTime(health.timestamp)
+                  : "Checking..."}
+              </p>
+
+            </div>
+
+            <div className="api-details">
+
+              <div>
+                <span>Version</span>
+                <strong>
+                  {health?.version ?? "--"}
+                </strong>
+              </div>
+
+              <div>
+                <span>Release</span>
+                <strong>
+                  {health?.release ?? "--"}
+                </strong>
+              </div>
+
+              <div>
+                <span>Pipeline</span>
+                <strong>
+                  GitHub Actions
+                </strong>
+              </div>
+
+            </div>
+
+          </section>
+
+
+          <footer className="footer">
+
+            <span>
+              © 2026 WorkWixa Cloud Platform
+            </span>
+
+            <div>
+              <span>Documentation</span>
+              <span>Support</span>
+              <span>Privacy</span>
+            </div>
+
+          </footer>
+
+        </div>
+
       </main>
 
-      {/* Footer */}
-      <footer
-        style={{
-          marginTop: "60px",
-          padding: "25px",
-          background: "#111827",
-          color: "#9ca3af",
-          textAlign: "center",
-        }}
-      >
-        UI-API-CICD | Release 4 | Terraform + GitHub Actions + Azure
-      </footer>
+      {loading && (
+        <div className="loading">
+          Loading...
+        </div>
+      )}
+
     </div>
   );
 }
 
-function InfoCard({
+
+// ---------------------------------------------------------
+// Metric Card
+// ---------------------------------------------------------
+
+function MetricCard({
   title,
   value,
-  subtitle,
+  detail,
+  icon,
+  positive,
 }: {
   title: string;
-  value: string;
-  subtitle: string;
+  value: string | number;
+  detail: string;
+  icon: string;
+  positive?: boolean;
 }) {
   return (
-    <div
-      style={{
-        background: "#ffffff",
-        border: "1px solid #e5e7eb",
-        borderRadius: "10px",
-        padding: "24px",
-        boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
-      }}
-    >
-      <p
-        style={{
-          margin: 0,
-          color: "#6b7280",
-          fontSize: "14px",
-        }}
-      >
-        {title}
-      </p>
+    <div className="metric-card">
 
-      <h2 style={{ margin: "10px 0 5px" }}>
+      <div className="metric-top">
+
+        <span className="metric-title">
+          {title}
+        </span>
+
+        <div className="metric-icon">
+          {icon}
+        </div>
+
+      </div>
+
+      <div className="metric-value">
         {value}
-      </h2>
+      </div>
 
-      <p
-        style={{
-          margin: 0,
-          color: "#6b7280",
-          fontSize: "14px",
-        }}
+      <div
+        className={
+          positive
+            ? "metric-detail positive"
+            : "metric-detail"
+        }
       >
-        {subtitle}
-      </p>
+        {positive && "↑ "}
+        {detail}
+      </div>
+
     </div>
   );
 }
 
-function EndpointCard({
-  method,
-  endpoint,
-  description,
-  loading,
-  status,
-  release,
-  message,
+
+// ---------------------------------------------------------
+// Health Row
+// ---------------------------------------------------------
+
+function HealthRow({
+  label,
+  value,
+  className,
 }: {
-  method: string;
-  endpoint: string;
-  description: string;
-  loading: boolean;
-  status?: string;
-  release?: string;
-  message?: string;
+  label: string;
+  value: number;
+  className: string;
 }) {
   return (
-    <div
-      style={{
-        background: "#ffffff",
-        border: "1px solid #e5e7eb",
-        borderRadius: "10px",
-        padding: "22px",
-        boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "10px",
-          marginBottom: "15px",
-        }}
-      >
-        <span
-          style={{
-            background: "#dcfce7",
-            color: "#166534",
-            padding: "5px 9px",
-            borderRadius: "5px",
-            fontSize: "12px",
-            fontWeight: "bold",
-          }}
-        >
-          {method}
-        </span>
+    <div className="health-row">
 
-        <code
-          style={{
-            fontSize: "15px",
-            fontWeight: "bold",
-          }}
-        >
-          {endpoint}
-        </code>
+      <div>
+        <span className={`health-marker ${className}`}></span>
+        {label}
       </div>
 
-      <p
-        style={{
-          color: "#6b7280",
-          fontSize: "14px",
-        }}
-      >
-        {description}
-      </p>
+      <strong>
+        {value}
+      </strong>
 
-      {loading ? (
-        <p>Checking endpoint...</p>
-      ) : (
-        <>
-          <p>
-            <strong>Status:</strong>{" "}
-            {status || "Unavailable"}
-          </p>
+    </div>
+  );
+}
 
-          <p>
-            <strong>Release:</strong>{" "}
-            {release || "N/A"}
-          </p>
 
-          <p
-            style={{
-              fontSize: "13px",
-              color: "#6b7280",
-            }}
-          >
-            {message || "No response received"}
-          </p>
-        </>
-      )}
+// ---------------------------------------------------------
+// Info Row
+// ---------------------------------------------------------
+
+function InfoRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="info-row">
+
+      <span>
+        {label}
+      </span>
+
+      <strong>
+        {value}
+      </strong>
+
     </div>
   );
 }
