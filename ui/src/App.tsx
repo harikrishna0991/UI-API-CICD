@@ -749,7 +749,7 @@ function App() {
           <footer className="footer">
 
             <span>
-              © 2026 WorkWixa Cloud Platform
+              © 2026 Cloud Platform
             </span>
 
             <div>

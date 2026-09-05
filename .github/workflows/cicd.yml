@@ -8,13 +8,17 @@ on:
   workflow_dispatch:
     inputs:
       deployment_tag:
-        description: "Optional deployment tag (example: dev-1.0.0)"
+        description: "Optional deployment tag (example: dev-1.0.3)"
         required: false
         type: string
 
 permissions:
   id-token: write
   contents: write
+
+concurrency:
+  group: ui-api-cicd-main
+  cancel-in-progress: false
 
 env:
   TF_WORKING_DIR: terraform
@@ -66,7 +70,7 @@ jobs:
 
 
   vault-version:
-    name: Get Version From Vault
+    name: Get Deployment Version From Vault
     runs-on: ubuntu-latest
     needs: terraform
 
@@ -100,7 +104,7 @@ jobs:
           set -e
 
           echo "========================================"
-          echo "Reading Version From Vault"
+          echo "Reading Latest Deployed Version From Vault"
           echo "========================================"
 
           if [ -z "${VAULT_TOKEN}" ]; then
@@ -125,20 +129,44 @@ jobs:
             exit 1
           fi
 
-          echo "Vault Version: ${VERSION_FROM_VAULT}"
+          echo "Latest deployed Vault version: ${VERSION_FROM_VAULT}"
           echo "Manual Deployment Tag: ${INPUT_TAG}"
           echo "Event: ${{ github.event_name }}"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${INPUT_TAG}" ]; then
+
+            if [[ ! "${INPUT_TAG}" =~ ^dev-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "ERROR: Invalid deployment tag format."
+              echo "Expected format: dev-X.Y.Z"
+              exit 1
+            fi
+
             DEPLOYMENT_TAG="${INPUT_TAG}"
             VERSION_VALUE="${DEPLOYMENT_TAG#dev-}"
+
+            echo "Manual deployment selected."
+            echo "Deploying existing version: ${VERSION_VALUE}"
+
           else
-            VERSION_VALUE="${VERSION_FROM_VAULT}"
+
+            if [[ ! "${VERSION_FROM_VAULT}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "ERROR: Invalid semantic version in Vault: ${VERSION_FROM_VAULT}"
+              exit 1
+            fi
+
+            IFS='.' read -r MAJOR MINOR PATCH <<< "${VERSION_FROM_VAULT}"
+
+            NEXT_PATCH=$((PATCH + 1))
+            VERSION_VALUE="${MAJOR}.${MINOR}.${NEXT_PATCH}"
             DEPLOYMENT_TAG="dev-${VERSION_VALUE}"
+
+            echo "Automatic deployment selected."
+            echo "Latest deployed version: ${VERSION_FROM_VAULT}"
+            echo "Next deployment version: ${VERSION_VALUE}"
           fi
 
           if [ -z "${VERSION_VALUE}" ]; then
-            echo "ERROR: Version is empty."
+            echo "ERROR: Deployment version is empty."
             exit 1
           fi
 
@@ -148,8 +176,8 @@ jobs:
           fi
 
           echo "========================================"
-          echo "Final Version: ${VERSION_VALUE}"
-          echo "Final Deployment Tag: ${DEPLOYMENT_TAG}"
+          echo "Deployment Version: ${VERSION_VALUE}"
+          echo "Deployment Tag: ${DEPLOYMENT_TAG}"
           echo "========================================"
 
           echo "version=${VERSION_VALUE}" >> "$GITHUB_OUTPUT"
@@ -176,6 +204,8 @@ jobs:
         id: changes
         shell: bash
         run: |
+          set -e
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.deployment_tag }}" ]; then
             echo "Manual tag deployment selected."
 
@@ -378,12 +408,14 @@ jobs:
       needs.vault-version.result == 'success' &&
       needs.detect-changes.result == 'success' &&
       (
-        needs.detect-changes.outputs.ui_changed == 'true' ||
-        needs.detect-changes.outputs.api_changed == 'true'
-      ) &&
-      (
-        needs.deploy-ui.result == 'success' ||
-        needs.deploy-api.result == 'success'
+        (
+          needs.detect-changes.outputs.ui_changed == 'false' ||
+          needs.deploy-ui.result == 'success'
+        ) &&
+        (
+          needs.detect-changes.outputs.api_changed == 'false' ||
+          needs.deploy-api.result == 'success'
+        )
       ) &&
       github.event_name == 'push'
 
@@ -393,24 +425,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify Deployment Tag
+      - name: Verify Deployment Version
         shell: bash
         env:
           DEPLOYMENT_TAG: ${{ needs.vault-version.outputs.deployment_tag }}
           VERSION: ${{ needs.vault-version.outputs.version }}
         run: |
+          set -e
+
           echo "========================================"
-          echo "Version: ${VERSION}"
+          echo "Deployment Version: ${VERSION}"
           echo "Deployment Tag: ${DEPLOYMENT_TAG}"
           echo "========================================"
 
           if [ -z "${VERSION}" ]; then
-            echo "ERROR: Version output is empty."
+            echo "ERROR: Deployment version is empty."
             exit 1
           fi
 
           if [ -z "${DEPLOYMENT_TAG}" ]; then
-            echo "ERROR: Deployment tag output is empty."
+            echo "ERROR: Deployment tag is empty."
             exit 1
           fi
 
@@ -419,9 +453,11 @@ jobs:
         env:
           DEPLOYMENT_TAG: ${{ needs.vault-version.outputs.deployment_tag }}
         run: |
+          set -e
+
           if git ls-remote --exit-code --tags origin "refs/tags/${DEPLOYMENT_TAG}" > /dev/null 2>&1; then
             echo "ERROR: Deployment tag ${DEPLOYMENT_TAG} already exists."
-            echo "Vault version may already have been used."
+            echo "Vault and Git tags are out of synchronization."
             exit 1
           fi
 
@@ -432,6 +468,8 @@ jobs:
         env:
           DEPLOYMENT_TAG: ${{ needs.vault-version.outputs.deployment_tag }}
         run: |
+          set -e
+
           echo "Creating deployment tag: ${DEPLOYMENT_TAG}"
 
           git config user.name "github-actions[bot]"
@@ -460,17 +498,19 @@ jobs:
       needs.detect-changes.result == 'success' &&
       needs.create-release-tag.result == 'success' &&
       (
-        needs.detect-changes.outputs.ui_changed == 'true' ||
-        needs.detect-changes.outputs.api_changed == 'true'
-      ) &&
-      (
-        needs.deploy-ui.result == 'success' ||
-        needs.deploy-api.result == 'success'
+        (
+          needs.detect-changes.outputs.ui_changed == 'false' ||
+          needs.deploy-ui.result == 'success'
+        ) &&
+        (
+          needs.detect-changes.outputs.api_changed == 'false' ||
+          needs.deploy-api.result == 'success'
+        )
       ) &&
       github.event_name == 'push'
 
     steps:
-      - name: Login to Vault and Read Current Version
+      - name: Login to Vault using GitHub OIDC
         uses: hashicorp/vault-action@v3
         id: vault
         with:
@@ -481,59 +521,28 @@ jobs:
           caCertificate: ${{ vars.VAULT_CA_CERT }}
           exportEnv: true
           exportToken: true
-          secrets: |
-            ${{ env.VAULT_SECRET_PATH }} version | CURRENT_VERSION
 
-      - name: Calculate Next Version
-        id: next
-        shell: bash
-        env:
-          CURRENT_VERSION: ${{ steps.vault.outputs.CURRENT_VERSION }}
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "Current Vault Version: ${CURRENT_VERSION}"
-          echo "========================================"
-
-          if [ -z "${CURRENT_VERSION}" ]; then
-            echo "ERROR: Current Vault version is empty."
-            exit 1
-          fi
-
-          IFS='.' read -r MAJOR MINOR PATCH <<< "${CURRENT_VERSION}"
-
-          if [ -z "${MAJOR}" ] || [ -z "${MINOR}" ] || [ -z "${PATCH}" ]; then
-            echo "ERROR: Invalid semantic version: ${CURRENT_VERSION}"
-            exit 1
-          fi
-
-          NEXT_PATCH=$((PATCH + 1))
-          NEXT_VERSION="${MAJOR}.${MINOR}.${NEXT_PATCH}"
-
-          echo "Next Vault Version: ${NEXT_VERSION}"
-
-          echo "next_version=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
-
-      - name: Write Next Version To Vault
+      - name: Update Vault With Deployed Version
         shell: bash
         env:
           VAULT_CA_CERT: ${{ vars.VAULT_CA_CERT }}
-          NEXT_VERSION: ${{ steps.next.outputs.next_version }}
+          DEPLOYMENT_VERSION: ${{ needs.vault-version.outputs.version }}
         run: |
           set -e
 
           echo "========================================"
-          echo "Updating Vault version to ${NEXT_VERSION}"
+          echo "Updating Vault With Successfully Deployed Version"
           echo "========================================"
+
+          echo "Deployment Version: ${DEPLOYMENT_VERSION}"
 
           if [ -z "${VAULT_TOKEN}" ]; then
             echo "ERROR: Vault token is empty."
             exit 1
           fi
 
-          if [ -z "${NEXT_VERSION}" ]; then
-            echo "ERROR: Next version is empty."
+          if [ -z "${DEPLOYMENT_VERSION}" ]; then
+            echo "ERROR: Deployment version is empty."
             exit 1
           fi
 
@@ -546,11 +555,11 @@ jobs:
             --request POST \
             --header "X-Vault-Token: ${VAULT_TOKEN}" \
             --header "Content-Type: application/json" \
-            --data "{\"data\":{\"version\":\"${NEXT_VERSION}\"}}" \
+            --data "{\"data\":{\"version\":\"${DEPLOYMENT_VERSION}\"}}" \
             --cacert vault-ca.crt \
             "${VAULT_ADDR}/v1/cicd/data/ui-api-cicd"
 
           echo "========================================"
-          echo "Vault version updated successfully."
-          echo "New version: ${NEXT_VERSION}"
+          echo "Vault Updated Successfully"
+          echo "Latest Deployed Version: ${DEPLOYMENT_VERSION}"
           echo "========================================"

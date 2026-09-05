@@ -154,7 +154,7 @@ app.MapGet("/api/services", () =>
             name = "CI/CD Pipeline",
             type = "GitHub Actions",
             status = "Healthy",
-            region = "Cloud",
+            region = "Cloud Region",
             endpoint = "GitHub"
         }
     };
